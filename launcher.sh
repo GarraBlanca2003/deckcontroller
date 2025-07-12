@@ -56,7 +56,6 @@ if [ -f "$REQUIREMENTS" ]; then
     "$VENV_DIR/bin/pip" install -r "$REQUIREMENTS" || {
         exit 1
     }
-else
 fi
 
 if [ -f "$SCRIPT" ]; then
