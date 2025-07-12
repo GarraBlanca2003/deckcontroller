@@ -56,8 +56,7 @@ if [ -f "$REQUIREMENTS" ]; then
     "$VENV_DIR/bin/pip" install -r "$REQUIREMENTS" || {
         exit 1
     }
-fi
-
+    
 if [ -f "$SCRIPT" ]; then
     chmod +x "$LAUNCHER"
     "$VENV_DIR/bin/pip" install --upgrade pip"
