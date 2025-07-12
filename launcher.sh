@@ -7,6 +7,7 @@ BRANCH="main"
 SCRIPT="$CLONE_DIR/sender.py"
 VENV_DIR="$CLONE_DIR/.venv"
 REQUIREMENTS="$CLONE_DIR/requirements.txt"
+LAUNCHER="$CLONE_DIR/launcher.sh"
 
 mkdir -p "$BASE_DIR"
 
@@ -59,6 +60,7 @@ else
 fi
 
 if [ -f "$SCRIPT" ]; then
+    chmod +x "$LAUNCHER"
     "$VENV_DIR/bin/python" "$SCRIPT"
 else
     exit 1
