@@ -63,6 +63,7 @@ if [ -f "$SCRIPT" ]; then
     "$VENV_DIR/bin/pip" install --upgrade pip"
     "$VENV_DIR/bin/pip" install -r "$REQUIREMENTS"
     "$VENV_DIR/bin/python" "$SCRIPT"
-else
-    exit 1
 fi
+
+exit 1
+
