@@ -1,7 +1,7 @@
 #!/bin/bash
 REPO_URL="https://github.com/GarraBlanca2003/deckcontroller"
 BASE_DIR="/home/deck/programs"
-CLONE_DIR="$BASE_DIR/datastream"
+CLONE_DIR="$BASE_DIR/deckcontroller"
 BRANCH="main"
 SCRIPT="$CLONE_DIR/sender.py"
 VENV_DIR="$CLONE_DIR/.venv"
