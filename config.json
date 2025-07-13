@@ -1,0 +1,5 @@
+{
+  "USE_UDP": false,
+  "SEND_FULL_STATE": true,
+  "VIBRATION" : true
+}
