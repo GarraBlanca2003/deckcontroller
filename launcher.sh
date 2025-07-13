@@ -73,6 +73,7 @@ if [ "$FIRST_RUN" = true ]; then
     echo "[INFO] First time setup: making launcher.sh executable..."
     if [ -f "$LAUNCHER_SH" ]; then
         chmod +x "$LAUNCHER_SH"
+        print "adding $BASE_DIR/deckcontroller/launcher.sh to steam as a game..."
         steamos-add-to-steam "$BASE_DIR/deckcontroller/launcher.sh"
         echo "[INFO] Done. Not launching Python script on first run."
     else
