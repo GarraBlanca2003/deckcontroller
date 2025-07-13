@@ -1,7 +1,6 @@
 import socket
 import json
 import threading
-import tkinter as tk
 import vgamepad as vg
 
 SHOW_UI = False
@@ -18,11 +17,7 @@ button_map = {
     'BTN_6': vg.XUSB_BUTTON.XUSB_GAMEPAD_BACK,
     'BTN_7': vg.XUSB_BUTTON.XUSB_GAMEPAD_START,
     'BTN_9': vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,
-    'BTN_10': vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB,
-    'HAT_0_UP': vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,
-    'HAT_0_DOWN': vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,
-    'HAT_0_LEFT': vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,
-    'HAT_0_RIGHT': vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT
+    'BTN_10': vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB
 }
 
 axis_state = {
@@ -33,10 +28,53 @@ axis_state = {
 
 pressed_buttons = set()
 
+dpad_state = {
+    'up': False,
+    'down': False,
+    'left': False,
+    'right': False
+}
+
+def update_dpad():
+    vertical = None
+    horizontal = None
+
+    if dpad_state['up'] and not dpad_state['down']:
+        vertical = 'up'
+    elif dpad_state['down'] and not dpad_state['up']:
+        vertical = 'down'
+
+    if dpad_state['left'] and not dpad_state['right']:
+        horizontal = 'left'
+    elif dpad_state['right'] and not dpad_state['left']:
+        horizontal = 'right'
+
+    direction = vg.DPAD_DIRECTION.DPAD_OFF
+
+    if vertical == 'up' and horizontal == 'left':
+        direction = vg.DPAD_DIRECTION.DPAD_UP_LEFT
+    elif vertical == 'up' and horizontal == 'right':
+        direction = vg.DPAD_DIRECTION.DPAD_UP_RIGHT
+    elif vertical == 'down' and horizontal == 'left':
+        direction = vg.DPAD_DIRECTION.DPAD_DOWN_LEFT
+    elif vertical == 'down' and horizontal == 'right':
+        direction = vg.DPAD_DIRECTION.DPAD_DOWN_RIGHT
+    elif vertical == 'up':
+        direction = vg.DPAD_DIRECTION.DPAD_UP
+    elif vertical == 'down':
+        direction = vg.DPAD_DIRECTION.DPAD_DOWN
+    elif horizontal == 'left':
+        direction = vg.DPAD_DIRECTION.DPAD_LEFT
+    elif horizontal == 'right':
+        direction = vg.DPAD_DIRECTION.DPAD_RIGHT
+
+    gamepad.dpad(direction)
+    gamepad.update()
+
 def handle_event(code, value):
     global axis_state, pressed_buttons
 
-    if code.startswith("BTN_") or code.startswith("HAT_"):
+    if code.startswith("BTN_"):
         btn = button_map.get(code)
         if btn:
             if value:
@@ -46,6 +84,12 @@ def handle_event(code, value):
                 gamepad.release_button(btn)
                 pressed_buttons.discard(btn)
             gamepad.update()
+
+    elif code.startswith("HAT_0_"):
+        direction = code.split("_")[-1].lower()
+        if direction in dpad_state:
+            dpad_state[direction] = bool(value)
+        update_dpad()
 
     elif code.startswith("AXIS_"):
         val = int(value * 32767)
@@ -78,7 +122,7 @@ def socket_thread():
     while True:
         try:
             conn, addr = sock.accept()
-            print(f"✅ Connected to {addr}")
+            print(f"✅ Connected from {addr}")
 
             buffer = ""
             while True:
@@ -103,7 +147,7 @@ def socket_thread():
         print("🔄 Waiting for new connection...")
 
 def run_ui():
-    # No ui for windows yet 
+    # No UI for Windows in this version
     pass
 
 if __name__ == "__main__":
