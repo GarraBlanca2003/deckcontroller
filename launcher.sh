@@ -79,19 +79,19 @@ fi
 
 if [ "$FIRST_RUN" = true ]; then
     if [ -f "$LAUNCHER_SH" ]; then
-        for USER_ID in "$STEAM_USERDATA_DIR"/*; do
-        echo "[INFO] adding art for $USER_ID"
-            GRID_DIR="$USER_ID/config/grid"
-            mkdir -p "$GRID_DIR"
-        echo "Installing artwork to $GRID_DIR"
-        cp "$BASE_DIR/deckcontroller/image/hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_hero.png"
-        cp "$BASE_DIR/deckcontroller/image/logo.png" "$GRID_DIR/${APP_DESKTOP_NAME}_logo.png"
-        cp "$BASE_DIR/deckcontroller/image/library_hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_hero.png"
-        cp "$BASE_DIR/deckcontroller/image/library_cover.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_cover.png"
-        cp "$BASE_DIR/deckcontroller/image/icon.png" "$GRID_DIR/${APP_DESKTOP_NAME}_icon.png"
-        cp "$BASE_DIR/deckcontroller/image/grid.png" "$GRID_DIR/${APP_DESKTOP_NAME}_grid.png"
-    done
-    echo "✅ Art installed"
+    #    for USER_ID in "$STEAM_USERDATA_DIR"/*; do
+    #    echo "[INFO] adding art for $USER_ID"
+    #        GRID_DIR="$USER_ID/config/grid"
+    #        mkdir -p "$GRID_DIR"
+    #    echo "Installing artwork to $GRID_DIR"
+    #    cp "$BASE_DIR/deckcontroller/image/hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_hero.png"
+    #    cp "$BASE_DIR/deckcontroller/image/logo.png" "$GRID_DIR/${APP_DESKTOP_NAME}_logo.png"
+    #    cp "$BASE_DIR/deckcontroller/image/library_hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_hero.png"
+    #    cp "$BASE_DIR/deckcontroller/image/library_cover.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_cover.png"
+    #    cp "$BASE_DIR/deckcontroller/image/icon.png" "$GRID_DIR/${APP_DESKTOP_NAME}_icon.png"
+    #    cp "$BASE_DIR/deckcontroller/image/grid.png" "$GRID_DIR/${APP_DESKTOP_NAME}_grid.png"
+    #done
+    #echo "✅ Art installed"
     echo "[INFO] First time setup: making launcher.sh executable..."
 
         chmod +x "$LAUNCHER_SH"

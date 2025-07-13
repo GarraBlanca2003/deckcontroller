@@ -5,4 +5,4 @@ Type=Application
 Terminal=true
 Exec=konsole -e "/home/deck/programs/deckcontroller/launcher.sh"
 Name=Deck Controller
-Icon=/home/deck/programs/deckcontroller/logo.ico
+Icon=/home/deck/programs/deckcontroller/image/hero.png
