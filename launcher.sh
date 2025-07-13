@@ -75,7 +75,7 @@ if [ "$FIRST_RUN" = true ]; then
         chmod +x "$LAUNCHER_SH"
         echo "[INFO] I hate tihis crap"
         echo "[INFO] $BASE_DIR/deckcontroller/launcher.sh added to steam as a game..."
-        steamos-add-to-steam "$BASE_DIR/deckcontroller/launcher.sh"
+        steamos-add-to-steam deck-remote "$BASE_DIR/deckcontroller/launcher.sh"
         echo "[INFO] Done. Not launching Python script on first run."
     else
         echo "[WARNING] launcher.sh not found at $LAUNCHER_SH."
