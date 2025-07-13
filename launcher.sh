@@ -1,8 +1,8 @@
 #!/bin/bash
-REPO_URL="https://github.com/GarraBlanca2003/deckcontroller/tree/develop"
-BASE_DIR="/home/deck/programs_dev"
+REPO_URL="https://github.com/GarraBlanca2003/deckcontroller"
+BASE_DIR="/home/deck/programs"
 CLONE_DIR="$BASE_DIR/deckcontroller"
-BRANCH="main"
+BRANCH="develop"
 SCRIPT="$CLONE_DIR/sender.py"
 VENV_DIR="$CLONE_DIR/.venv"
 REQUIREMENTS="$CLONE_DIR/requirements.txt"
