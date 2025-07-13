@@ -209,8 +209,8 @@ def run_ui():
     def dpad_active(name):
         x, y = state['dpad']
         return (
-            (name == "HAT_0_UP" and y == -1) or
-            (name == "HAT_0_DOWN" and y == 1) or
+            (name == "HAT_0_UP" and y == 1) or
+            (name == "HAT_0_DOWN" and y == -1) or
             (name == "HAT_0_LEFT" and x == -1) or
             (name == "HAT_0_RIGHT" and x == 1)
         )
