@@ -95,7 +95,7 @@ if [ "$FIRST_RUN" = true ]; then
     echo "[INFO] First time setup: making launcher.sh executable..."
 
         chmod +x "$LAUNCHER_SH"
-        steamos-add-to-steam $BASE_DIR/deckcontroller/deckcontroller.desktop
+        steamos-add-to-steam /home/deck/programs/deckcontroller/deckcontroller.desktop
         echo "[INFO] Done. Not launching Python script on first run."
     else
         echo "[WARNING] launcher.sh not found at $LAUNCHER_SH."
