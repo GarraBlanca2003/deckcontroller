@@ -1,0 +1,4 @@
+{
+  "USE_UDP": true,
+  "SEND_FULL_STATE": true
+}

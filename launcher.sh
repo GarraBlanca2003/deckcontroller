@@ -1,6 +1,6 @@
 #!/bin/bash
-REPO_URL="https://github.com/GarraBlanca2003/deckcontroller"
-BASE_DIR="/home/deck/programs"
+REPO_URL="https://github.com/GarraBlanca2003/deckcontroller/tree/test"
+BASE_DIR="/home/deck/programs_dev"
 CLONE_DIR="$BASE_DIR/deckcontroller"
 BRANCH="main"
 SCRIPT="$CLONE_DIR/sender.py"

@@ -1,10 +1,30 @@
+# === receiver.py ===
 import socket
 import json
 import threading
 import tkinter as tk
 from evdev import UInput, ecodes as e
+import os
 
 SHOW_UI = True
+SERVER_PORT = 5000
+CONFIG_PORT = 5001
+CONFIG_PATH = "config.json"
+
+
+USE_UDP = False
+SEND_FULL_STATE = False
+
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r") as f:
+        try:
+            config = json.load(f)
+            USE_UDP = config.get("USE_UDP", USE_UDP)
+            SEND_FULL_STATE = config.get("SEND_FULL_STATE", SEND_FULL_STATE)
+            print(f"🛠️ Loaded config: UDP={USE_UDP}, FullState={SEND_FULL_STATE}")
+        except Exception as e:
+            print("❌ Error reading config:", e)
+
 capabilities = {
     e.EV_KEY: [
         e.BTN_A, e.BTN_B, e.BTN_X, e.BTN_Y,
@@ -44,6 +64,7 @@ axis_map = {
     'AXIS_2': e.ABS_Z,  'AXIS_5': e.ABS_RZ,
     'HAT_0': (e.ABS_HAT0X, e.ABS_HAT0Y)
 }
+
 state = {
     'buttons': set(),
     'axes': {
@@ -56,11 +77,7 @@ state = {
 
 current_dpad_buttons = set()
 
-# I. handler
 def handle_event(code, value):
-    #if not code.startswith("AXIS_"):
-    #    print(f'code : {code} : {value}')
-    
     if code.startswith("BTN_"):
         ev = button_map.get(code)
         if ev:
@@ -75,10 +92,7 @@ def handle_event(code, value):
     elif code.startswith("AXIS_"):
         ev = axis_map.get(code)
         if isinstance(ev, int):
-            if ev in (e.ABS_X, e.ABS_Y, e.ABS_RX, e.ABS_RY):
-                val = int(value * 32767)
-            else:
-                val = int(value * 32767)
+            val = int(value * 32767) if abs(value) <= 1 else value
             ui.write(e.EV_ABS, ev, val)
             ui.syn()
 
@@ -93,51 +107,55 @@ def handle_event(code, value):
     elif code == "HAT_0":
         global current_dpad_buttons
         x, y = value
-        
+
         for btn in current_dpad_buttons:
             ui.write(e.EV_KEY, btn, 0)
         current_dpad_buttons.clear()
-        
-        if x == -1:  # Left
+
+        if x == -1:
             ui.write(e.EV_KEY, e.BTN_DPAD_LEFT, 1)
             current_dpad_buttons.add(e.BTN_DPAD_LEFT)
-        elif x == 1:  # Right
+        elif x == 1:
             ui.write(e.EV_KEY, e.BTN_DPAD_RIGHT, 1)
             current_dpad_buttons.add(e.BTN_DPAD_RIGHT)
-            
-        if y == 1:  # Up
+
+        if y == 1:
             ui.write(e.EV_KEY, e.BTN_DPAD_UP, 1)
             current_dpad_buttons.add(e.BTN_DPAD_UP)
-        elif y == -1:  #Down
+        elif y == -1:
             ui.write(e.EV_KEY, e.BTN_DPAD_DOWN, 1)
             current_dpad_buttons.add(e.BTN_DPAD_DOWN)
 
         ui.write(e.EV_ABS, e.ABS_HAT0X, x)
         ui.write(e.EV_ABS, e.ABS_HAT0Y, y)
         ui.syn()
-        
+
         if SHOW_UI:
             state['dpad'] = (x, y)
+
+def apply_full_state(data):
+    for i, val in enumerate(data['axes']):
+        handle_event(f"AXIS_{i}", val)
+    for i, val in enumerate(data['buttons']):
+        handle_event(f"BTN_{i}", val)
+    handle_event("HAT_0", data['hat'])
 
 def socket_thread():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", 5000))
+    sock.bind(("0.0.0.0", SERVER_PORT))
     sock.listen(1)
     print("🎮 Waiting for deck...")
-
     while True:
         try:
             conn, addr = sock.accept()
             print(f"✅ Connected {addr}")
-
             buffer = ""
             while True:
                 data = conn.recv(1024)
                 if not data:
                     print("⚠️ Connection closed by client.")
                     break
-
                 buffer += data.decode()
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
@@ -145,13 +163,42 @@ def socket_thread():
                         event = json.loads(line)
                         if event['type'] == 'gamepad':
                             handle_event(event['data']['code'], event['data']['state'])
+                        elif event['type'] == 'full_state':
+                            apply_full_state(event['data'])
                     except Exception as ex:
                         print("❌ JSON decode error:", ex)
-
         except Exception as ex:
             print("❌ Socket error:", ex)
-
         print("🔄 Waiting for new connection...")
+
+def udp_server():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("0.0.0.0", SERVER_PORT))
+    print("📡 UDP server started")
+    while True:
+        try:
+            data, addr = sock.recvfrom(2048)
+            event = json.loads(data.decode())
+            if event['type'] == 'gamepad':
+                handle_event(event['data']['code'], event['data']['state'])
+            elif event['type'] == 'full_state':
+                apply_full_state(event['data'])
+        except Exception as e:
+            print("❌ UDP error:", e)
+
+def config_server():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("0.0.0.0", CONFIG_PORT))
+        s.listen(1)
+        print("📡 Config server running on port", CONFIG_PORT)
+        while True:
+            conn, addr = s.accept()
+            with conn:
+                config_data = json.dumps({
+                    "USE_UDP": USE_UDP,
+                    "SEND_FULL_STATE": SEND_FULL_STATE
+                })
+                conn.sendall(config_data.encode())
 
 
 def run_ui():
@@ -213,7 +260,11 @@ def run_ui():
     root.mainloop()
 
 if __name__ == "__main__":
-    threading.Thread(target=socket_thread, daemon=True).start()
+    threading.Thread(target=config_server, daemon=True).start()
+    if USE_UDP:
+        threading.Thread(target=udp_server, daemon=True).start()
+    else:
+        threading.Thread(target=socket_thread, daemon=True).start()
     if SHOW_UI:
         run_ui()
     else:
