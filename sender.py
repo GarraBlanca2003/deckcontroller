@@ -9,10 +9,14 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 
-SERVER_IP = "" # auto to scan, ip  to hard code or leave blank to ask
+SERVER_IP = ""  # auto to scan, ip to hard code or leave blank to ask
 SERVER_PORT = 5000
+CONFIG_PORT = 5001
 RETRY_DELAY = 3
 SCAN_TIMEOUT = 1
+
+USE_UDP = False
+SEND_FULL_STATE = False
 
 pygame.init()
 pygame.display.set_caption("Input Sender")
@@ -20,12 +24,24 @@ screen = pygame.display.set_mode((1280, 800))
 font = pygame.font.SysFont("monospace", 20)
 clock = pygame.time.Clock()
 
+def fetch_config_from_receiver():
+    global USE_UDP, SEND_FULL_STATE
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((SERVER_IP, CONFIG_PORT))
+            data = s.recv(1024)
+            config = json.loads(data.decode())
+            USE_UDP = config.get("USE_UDP", False)
+            SEND_FULL_STATE = config.get("SEND_FULL_STATE", False)
+            print(f"📡 Got config: UDP={USE_UDP}, FullState={SEND_FULL_STATE}")
+    except Exception as e:
+        print("❌ Could not get config from receiver:", e)
+
 def get_local_networks():
     networks = []
     try:
         hostname = socket.gethostname()
         local_ips = socket.getaddrinfo(hostname, None, socket.AF_INET)
-        
         for ip_info in local_ips:
             ip = ip_info[4][0]
             if not ip.startswith('127.'):
@@ -39,7 +55,6 @@ def get_local_networks():
             ipaddress.IPv4Network("10.0.0.0/24"),
             ipaddress.IPv4Network("172.16.0.0/24"),
         ]
-    
     return networks
 
 def check_server_at_ip(ip):
@@ -53,7 +68,7 @@ def check_server_at_ip(ip):
         return None
 
 def scan_network_range(network, progress_callback=None):
-    print(f"🔍 Scanning {network}...")    
+    print(f"🔍 Scanning {network}...")
     host_ips = [ip for ip in network.hosts()]
     total_ips = len(host_ips)
     with ThreadPoolExecutor(max_workers=50) as executor:
@@ -63,7 +78,6 @@ def scan_network_range(network, progress_callback=None):
             completed += 1
             if progress_callback:
                 progress_callback(completed, total_ips, str(futures[future]))
-            
             result = future.result()
             if result:
                 print(f"✅ Found server at {result}!")
@@ -71,7 +85,7 @@ def scan_network_range(network, progress_callback=None):
     return None
 
 def scan_for_server():
-    draw_status("Scanning LAN...")    
+    draw_status("Scanning LAN...")
     networks = get_local_networks()
     for network in networks:
         def progress_callback(completed, total, current_ip):
@@ -92,39 +106,36 @@ def ask_for_ip():
     root = tk.Tk()
     root.withdraw()
     choice = simpledialog.askstring(
-        "Server Discovery", 
+        "Server Discovery",
         "Enter 'scan' to search LAN automatically, or enter IP address manually:"
     )
     if not choice:
         return 'auto'
-    
     choice = choice.strip().lower()
-    if choice == 'scan':
-        return 'auto'
-    else:
-        return choice
+    return 'auto' if choice == 'scan' else choice
 
 def connect():
     while True:
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((SERVER_IP, SERVER_PORT))
-            return s
+            if USE_UDP:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                return s
+            else:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((SERVER_IP, SERVER_PORT))
+                return s
         except socket.error:
             pygame.display.set_caption("Input Sender - Disconnected")
             draw_status("Connection error ")
             time.sleep(RETRY_DELAY)
 
-def send_event(sock, code, state):
-    message = json.dumps({
-        'type': 'gamepad',
-        'data': {
-            'code': code,
-            'state': state
-        }
-    }) + '\n'
+def send(sock, payload):
+    message = json.dumps(payload)
     try:
-        sock.sendall(message.encode())
+        if USE_UDP:
+            sock.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
+        else:
+            sock.sendall((message + '\n').encode())
     except socket.error:
         raise ConnectionError("Lost connection")
 
@@ -137,24 +148,16 @@ def draw_status(message):
 def main():
     global SERVER_IP
 
-    # discovery
     if not SERVER_IP or SERVER_IP.lower() == "auto":
+        user_input = ask_for_ip() if not SERVER_IP else SERVER_IP
+        SERVER_IP = scan_for_server() if user_input.lower() == 'auto' else user_input
         if not SERVER_IP:
-            user_input = ask_for_ip()
-            if user_input.lower() == 'auto':
-                SERVER_IP = scan_for_server()
-                if not SERVER_IP:
-                    print("❌ No server found on LAN")
-                    sys.exit(1)
-            else:
-                SERVER_IP = user_input
-        else:
-            SERVER_IP = scan_for_server()
-            if not SERVER_IP:
-                sys.exit(1)
+            print("❌ No server found on LAN")
+            sys.exit(1)
+
+    fetch_config_from_receiver()
 
     pygame.joystick.init()
-
     while pygame.joystick.get_count() == 0:
         draw_status("🕹️ Waiting for controller...")
         time.sleep(1)
@@ -186,22 +189,44 @@ def main():
 
             draw_status("")
 
-            for i in range(joystick.get_numaxes()):
-                val = round(joystick.get_axis(i), 2)
-                if abs(val - axes_state[i]) >= 0.01:
-                    axes_state[i] = val
-                    send_event(sock, f"AXIS_{i}", val)
+            if SEND_FULL_STATE:
+                axes = [round(joystick.get_axis(i), 2) for i in range(joystick.get_numaxes())]
+                buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
+                hat = list(joystick.get_hat(0))
+                send(sock, {
+                    'type': 'full_state',
+                    'data': {
+                        'axes': axes,
+                        'buttons': buttons,
+                        'hat': hat
+                    }
+                })
+            else:
+                for i in range(joystick.get_numaxes()):
+                    val = round(joystick.get_axis(i), 2)
+                    if abs(val - axes_state[i]) >= 0.01:
+                        axes_state[i] = val
+                        send(sock, {
+                            'type': 'gamepad',
+                            'data': { 'code': f"AXIS_{i}", 'state': val }
+                        })
 
-            for i in range(joystick.get_numbuttons()):
-                pressed = joystick.get_button(i)
-                if pressed != buttons_state[i]:
-                    buttons_state[i] = pressed
-                    send_event(sock, f"BTN_{i}", pressed)
+                for i in range(joystick.get_numbuttons()):
+                    pressed = joystick.get_button(i)
+                    if pressed != buttons_state[i]:
+                        buttons_state[i] = pressed
+                        send(sock, {
+                            'type': 'gamepad',
+                            'data': { 'code': f"BTN_{i}", 'state': pressed }
+                        })
 
-            new_hat = joystick.get_hat(0)
-            if new_hat != hat_state:
-                hat_state = new_hat
-                send_event(sock, "HAT_0", list(hat_state))
+                new_hat = joystick.get_hat(0)
+                if new_hat != hat_state:
+                    hat_state = new_hat
+                    send(sock, {
+                        'type': 'gamepad',
+                        'data': { 'code': "HAT_0", 'state': list(hat_state) }
+                    })
 
             clock.tick(60)
 
