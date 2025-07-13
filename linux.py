@@ -4,7 +4,7 @@ import threading
 import tkinter as tk
 from evdev import UInput, ecodes as e
 
-SHOW_UI = False
+SHOW_UI = True
 capabilities = {
     e.EV_KEY: [
         e.BTN_A, e.BTN_B, e.BTN_X, e.BTN_Y,
@@ -129,7 +129,7 @@ def socket_thread():
     while True:
         try:
             conn, addr = sock.accept()
-            print(f"✅ Connected to {addr}")
+            print(f"✅ Connected {addr}")
 
             buffer = ""
             while True:
