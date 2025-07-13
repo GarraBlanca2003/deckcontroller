@@ -9,11 +9,12 @@ REQUIREMENTS="$CLONE_DIR/requirements.txt"
 LAUNCHER_SH="$CLONE_DIR/launcher.sh"
 FIRST_RUN_FLAG="$CLONE_DIR/.first_run_done"
 STEAM_USERDATA_DIR="$HOME/.local/share/Steam/userdata"
+APP_DESKTOP_NAME="deckcontroller"
+
+
 
 mkdir -p "$BASE_DIR"
-
 FIRST_RUN=false
-
 if [ ! -d "$STEAM_USERDATA_DIR" ]; then
     echo "Steam userdata directory not found!"
     exit 1
