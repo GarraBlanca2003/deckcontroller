@@ -1,4 +1,5 @@
 {
-  "USE_UDP": true,
-  "SEND_FULL_STATE": true
+  "USE_UDP": false,
+  "SEND_FULL_STATE": true,
+  "VIBRATE" : true
 }
