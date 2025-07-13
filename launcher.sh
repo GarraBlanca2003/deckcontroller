@@ -8,10 +8,16 @@ VENV_DIR="$CLONE_DIR/.venv"
 REQUIREMENTS="$CLONE_DIR/requirements.txt"
 LAUNCHER_SH="$CLONE_DIR/launcher.sh"
 FIRST_RUN_FLAG="$CLONE_DIR/.first_run_done"
+STEAM_USERDATA_DIR="$HOME/.local/share/Steam/userdata"
 
 mkdir -p "$BASE_DIR"
 
 FIRST_RUN=false
+
+if [ ! -d "$STEAM_USERDATA_DIR" ]; then
+    echo "Steam userdata directory not found!"
+    exit 1
+fi
 
 if [ ! -d "$CLONE_DIR/.git" ]; then
     echo "[INFO] Cloning repository into $CLONE_DIR..."
@@ -70,12 +76,24 @@ else
 fi
 
 if [ "$FIRST_RUN" = true ]; then
-    echo "[INFO] First time setup: making launcher.sh executable..."
     if [ -f "$LAUNCHER_SH" ]; then
+        for USER_ID in "$STEAM_USERDATA_DIR"/*; do
+        echo "[INFO] adding art for $USER_ID"
+            GRID_DIR="$USER_ID/config/grid"
+            mkdir -p "$GRID_DIR"
+        echo "Installing artwork to $GRID_DIR"
+        cp "$BASE_DIR/image/hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_hero.png"
+        cp "$BASE_DIR/image/logo.png" "$GRID_DIR/${APP_DESKTOP_NAME}_logo.png"
+        cp "$BASE_DIR/image/library_hero.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_hero.png"
+        cp "$BASE_DIR/image/library_cover.png" "$GRID_DIR/${APP_DESKTOP_NAME}_library_cover.png"
+        cp "$BASE_DIR/image/icon.png" "$GRID_DIR/${APP_DESKTOP_NAME}_icon.png"
+        cp "$BASE_DIR/image/grid.png" "$GRID_DIR/${APP_DESKTOP_NAME}_grid.png"
+    done
+    echo "✅ Art installed"
+    echo "[INFO] First time setup: making launcher.sh executable..."
+
         chmod +x "$LAUNCHER_SH"
-        echo "[INFO] I hate this crap"
-        echo "[INFO] $BASE_DIR/deckcontroller/launcher.sh added to steam as a game..."
-        steamos-add-to-steam "$BASE_DIR/deckcontroller/remote.desktop"
+        steamos-add-to-steam $BASE_DIR/deckcontroller/deckcontroller.desktop
         echo "[INFO] Done. Not launching Python script on first run."
     else
         echo "[WARNING] launcher.sh not found at $LAUNCHER_SH."
