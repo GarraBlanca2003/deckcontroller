@@ -1,4 +1,3 @@
-# === sender.py ===
 import pygame
 import socket
 import json
