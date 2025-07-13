@@ -20,6 +20,7 @@ if [ ! -d "$STEAM_USERDATA_DIR" ]; then
 fi
 
 if [ ! -d "$CLONE_DIR/.git" ]; then
+    rm -rf $CLONE_DIR
     echo "[INFO] Cloning repository into $CLONE_DIR..."
     git clone --branch "$BRANCH" "$REPO_URL" "$CLONE_DIR" || {
         echo "[ERROR] Failed to clone repository."
