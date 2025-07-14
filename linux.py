@@ -174,7 +174,7 @@ def controller_server():
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
                         response = {
-                            "RUMBLE": 100
+                            "RUMBLE": slider_rumble
                         }
                         conn.sendall((json.dumps(response) + "\n").encode())
 
@@ -228,8 +228,34 @@ def debug_server():
 def run_ui():
     root = tk.Tk()
     root.title("Controller UI")
-    canvas = tk.Canvas(root, width=400, height=300, bg="black")
+
+    # UI layout: use a Frame to hold both canvas and slider
+    main_frame = tk.Frame(root, bg="black")
+    main_frame.pack()
+
+    canvas = tk.Canvas(main_frame, width=400, height=300, bg="black")
     canvas.pack()
+
+    # Slider callback (optional: link to something)
+    def on_slider_change(value):
+        slider_rumble = value
+        #print("Slider value:", value)  # You can modify this to send data back to the sender if needed
+
+    # Add a horizontal slider from 0 to 100
+    slider = tk.Scale(
+        main_frame,
+        from_=0,
+        to=100,
+        orient=tk.HORIZONTAL,
+        length=300,
+        label="Custom Slider",
+        command=on_slider_change,
+        troughcolor="gray",
+        fg="white",
+        bg="black",
+        highlightthickness=0
+    )
+    slider.pack(pady=10)
 
     def dpad_active(name):
         x, y = state['dpad']
@@ -282,7 +308,6 @@ def run_ui():
 
     redraw()
     root.mainloop()
-
 if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
     threading.Thread(target=controller_server, daemon=True).start()

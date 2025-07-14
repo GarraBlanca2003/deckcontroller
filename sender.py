@@ -254,7 +254,7 @@ def main():
                     })
                 
             if USE_RUMBLE:
-                draw_status(f"RUMBLE: {rumble}")
+                draw_status(f"RUMBLE: {response["RUMBLE"]}")
             else:
                 draw_status("")
 
