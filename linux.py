@@ -5,13 +5,15 @@ import tkinter as tk
 from evdev import UInput, ecodes as e
 import os
 
-SHOW_UI = False
+SHOW_UI = True
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
+DEBUG_PORT = 5002
 CONFIG_PATH = "config.json"
-vibration = 0
+slider_rumble = 0
 USE_RUMBLE = False
 SEND_FULL_STATE = False
+DEBUG = True
 
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:
@@ -142,7 +144,7 @@ def apply_full_state(data):
         handle_event(f"BTN_{i}", val)
     handle_event("HAT_0", data['hat'])
 
-def socket_thread():
+def controller_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", SERVER_PORT))
@@ -172,7 +174,7 @@ def socket_thread():
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
                         response = {
-                            "RUMBLE": 123
+                            "RUMBLE": 100
                         }
                         conn.sendall((json.dumps(response) + "\n").encode())
 
@@ -195,9 +197,33 @@ def config_server():
                 config_data = json.dumps({
                     "USE_UDP": USE_UDP,
                     "SEND_FULL_STATE": SEND_FULL_STATE,
-                    "RUMBLE": USE_RUMBLE
+                    "RUMBLE": USE_RUMBLE,
+                    "DEBUG" : DEBUG
+
                 })
                 conn.sendall(config_data.encode())
+
+def debug_server():
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("0.0.0.0", DEBUG_PORT))
+        server.listen(1)
+        print(f"[DEBUG] Listening on {DEBUG_PORT}...")
+
+        conn, addr = server.accept()
+        with conn:
+            print(f"[DEBUG] Connected by {addr}")
+            buffer = ""
+            while True:
+                data = conn.recv(1024)
+                if not data:
+                    print("[DEBUG] Connection closed.")
+                    break
+                buffer += data.decode()
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    print(f"[DEBUG] {line}")
 
 
 def run_ui():
@@ -260,7 +286,9 @@ def run_ui():
 
 if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
-    threading.Thread(target=socket_thread, daemon=True).start()
+    threading.Thread(target=controller_server, daemon=True).start()
+    if DEBUG:
+        threading.Thread(target=debug_server, daemon=True).start()
     if SHOW_UI:
         run_ui()
     else:

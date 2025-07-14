@@ -9,16 +9,16 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 
-SERVER_IP = ""  # auto to scan, ip to hard code or leave blank to ask
+SERVER_IP = ""
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
+DEBUG_PORT = 5002
 RETRY_DELAY = 3
 SCAN_TIMEOUT = 1
 
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-
-rumble = 0
+DEBUG = False
 
 pygame.init()
 pygame.display.set_caption("Input Sender")
@@ -35,6 +35,7 @@ def fetch_config_from_receiver():
             config = json.loads(data.decode())
             USE_RUMBLE = config.get("RUMBLE", False)
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", False)
+            DEBUG = config.get("DEBUG", False)
             print(f"📡 Got config: rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
     except Exception as e:
         print("❌ Could not get config from receiver:", e)
@@ -143,7 +144,10 @@ def send(sock, payload):
                 
     except socket.error:
         raise ConnectionError("Lost connection")
-
+def debug_log(text):
+    if DEBUG:
+        with socket.create_connection((SERVER_IP, DEBUG_PORT)) as sock:
+            sock.sendall(text.encode())
 
 def draw_status(message):
     screen.fill((20, 20, 20))
@@ -151,6 +155,10 @@ def draw_status(message):
     screen.blit(label, (20, 35))
     pygame.display.flip()
 
+def rumble(rumble_power):
+    if USE_RUMBLE:
+        debug_log(f"rumble : {rumble_power}")
+        pygame.joystick.Joystick.rumble(1,1,100)
 def main():
     global SERVER_IP
 
@@ -206,7 +214,7 @@ def main():
                             'hat': hat
                         }
                     })
-                    rumble = response["RUMBLE"]
+                    rumble(response["RUMBLE"])
                 else:
                     send(sock, {
                         'type': 'full_state',
