@@ -130,9 +130,20 @@ def connect():
 def send(sock, payload):
     message = json.dumps(payload)
     try:
-            sock.sendall((message + '\n').encode())
+        sock.sendall((message + '\n').encode())
+        buffer = ""
+        while True:
+            data = sock.recv(1024).decode()
+            if not data:
+                raise ConnectionError("Lost connection or no response")
+            buffer += data
+            if '\n' in buffer:
+                line, _ = buffer.split('\n', 1)
+                return json.loads(line)
+                
     except socket.error:
         raise ConnectionError("Lost connection")
+
 
 def draw_status(message):
     screen.fill((20, 20, 20))
@@ -181,23 +192,29 @@ def main():
                 draw_status("Paused (unfocused)")
                 time.sleep(0.1)
                 continue
-            if USE_RUMBLE:
-                draw_status(f"RUMBLE: {rumble}")
-            else:
-                draw_status("")
 
             if SEND_FULL_STATE:
                 axes = [round(joystick.get_axis(i), 2) for i in range(joystick.get_numaxes())]
                 buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
                 hat = list(joystick.get_hat(0))
-                send(sock, {
-                    'type': 'full_state',
-                    'data': {
-                        'axes': axes,
-                        'buttons': buttons,
-                        'hat': hat
-                    }
-                })
+                if USE_RUMBLE:
+                    rumble = send(sock, {
+                        'type': 'full_state',
+                        'data': {
+                            'axes': axes,
+                            'buttons': buttons,
+                            'hat': hat
+                        }
+                    })
+                else:
+                    send(sock, {
+                        'type': 'full_state',
+                        'data': {
+                            'axes': axes,
+                            'buttons': buttons,
+                            'hat': hat
+                        }
+                    })
             else:
                 for i in range(joystick.get_numaxes()):
                     val = round(joystick.get_axis(i), 2)
@@ -224,6 +241,11 @@ def main():
                         'type': 'gamepad',
                         'data': { 'code': "HAT_0", 'state': list(hat_state) }
                     })
+                
+            if USE_RUMBLE:
+                draw_status(f"RUMBLE: {rumble}")
+            else:
+                draw_status("")
 
             clock.tick(60)
 

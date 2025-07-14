@@ -40,10 +40,13 @@ capabilities = {
         e.ABS_RZ: (0, 255, 0, 0),
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
+    },
+    e.EV_FF:{
+        e.FF_RUMBLE
     }
 }
 
-ui = UInput(capabilities, name="Virtual Gamepad", version=0x3)
+ui = UInput(capabilities, name="Virtual Gamepad", version=0x3,bustype=e.BUS_USB)
 
 button_map = {
     'BTN_0': e.BTN_A, 'BTN_1': e.BTN_B, 'BTN_2': e.BTN_X, 'BTN_3': e.BTN_Y,
@@ -145,17 +148,21 @@ def socket_thread():
     sock.bind(("0.0.0.0", SERVER_PORT))
     sock.listen(1)
     print("🎮 Waiting for deck...")
+
     while True:
         try:
             conn, addr = sock.accept()
             print(f"✅ Connected {addr}")
             buffer = ""
+
             while True:
                 data = conn.recv(1024)
                 if not data:
                     print("⚠️ Connection closed by client.")
                     break
+
                 buffer += data.decode()
+
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
                     try:
@@ -164,10 +171,18 @@ def socket_thread():
                             handle_event(event['data']['code'], event['data']['state'])
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
+                        response = {
+                            "type": "test",
+                            "RUMBLE": 123
+                        }
+                        conn.sendall((json.dumps(response) + "\n").encode())
+
                     except Exception as ex:
                         print("❌ JSON decode error:", ex)
+
         except Exception as ex:
             print("❌ Socket error:", ex)
+
         print("🔄 Waiting for new connection...")
 
 def config_server():
