@@ -13,7 +13,7 @@ CONFIG_PATH = "config.json"
 slider_rumble = 0
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = False
+DEBUG = True
 
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:
@@ -287,8 +287,7 @@ if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
     threading.Thread(target=controller_server, daemon=True).start()
     if DEBUG:
-        pass
-        #threading.Thread(target=debug_server, daemon=True).start()
+        threading.Thread(target=debug_server, daemon=True).start()
     if SHOW_UI:
         run_ui()
     else:
