@@ -172,7 +172,6 @@ def socket_thread():
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
                         response = {
-                            "type": "test",
                             "RUMBLE": 123
                         }
                         conn.sendall((json.dumps(response) + "\n").encode())

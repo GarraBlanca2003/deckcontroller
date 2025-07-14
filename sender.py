@@ -198,7 +198,7 @@ def main():
                 buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
                 hat = list(joystick.get_hat(0))
                 if USE_RUMBLE:
-                    rumble = send(sock, {
+                    response = send(sock, {
                         'type': 'full_state',
                         'data': {
                             'axes': axes,
@@ -206,6 +206,7 @@ def main():
                             'hat': hat
                         }
                     })
+                    rumble = response["RUMBLE"]
                 else:
                     send(sock, {
                         'type': 'full_state',
