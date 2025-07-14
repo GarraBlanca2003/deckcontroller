@@ -160,7 +160,8 @@ def draw_status(message):
 def rumble(rumble_power):
     debug_log(f"rumble : {rumble_power}")
     if USE_RUMBLE:
-        pygame.joystick.Joystick.rumble(1,1,100)
+        pass
+        #pygame.joystick.Joystick.rumble(1,1,100)
 def main():
     global SERVER_IP
 
