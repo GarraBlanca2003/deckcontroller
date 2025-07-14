@@ -18,7 +18,7 @@ SCAN_TIMEOUT = 1
 
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = False
+DEBUG = True
 
 pygame.init()
 pygame.display.set_caption("Input Sender")
@@ -158,7 +158,7 @@ def draw_status(message):
 def rumble(rumble_power):
     if USE_RUMBLE:
         debug_log(f"rumble : {rumble_power}")
-        pygame.joystick.Joystick.rumble(1,1,100)
+        #pygame.joystick.Joystick.rumble(1,1,100)
 def main():
     global SERVER_IP
 

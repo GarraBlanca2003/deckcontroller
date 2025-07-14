@@ -204,7 +204,6 @@ def config_server():
                 conn.sendall(config_data.encode())
 
 def debug_server():
-
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind(("0.0.0.0", DEBUG_PORT))
@@ -288,7 +287,8 @@ if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
     threading.Thread(target=controller_server, daemon=True).start()
     if DEBUG:
-        threading.Thread(target=debug_server, daemon=True).start()
+        pass
+        #threading.Thread(target=debug_server, daemon=True).start()
     if SHOW_UI:
         run_ui()
     else:
