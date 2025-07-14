@@ -152,8 +152,8 @@ def draw_status(message):
     screen.blit(label, (20, 35))
     pygame.display.flip()
 
-def rumble(rumble_power):
-    debug_log(f"rumble : {rumble_power}")
+def rumble(sock,rumble_power):
+    debug_log(sock, f"rumble : {rumble_power}")
     if USE_RUMBLE:
         pass
         #pygame.joystick.Joystick.rumble(1,1,100)
@@ -212,7 +212,7 @@ def main():
                             'hat': hat
                         }
                     })
-                    rumble(response["RUMBLE"])
+                    rumble(sock,response["RUMBLE"])
                 else:
                     send(sock, {
                         'type': 'full_state',
