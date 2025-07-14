@@ -10,26 +10,27 @@ SERVER_PORT = 5000
 CONFIG_PORT = 5001
 CONFIG_PATH = "config.json"
 vibration = 0
-
-SEND_FULL_STATE = False
 USE_RUMBLE = False
+SEND_FULL_STATE = False
+
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:
         try:
             config = json.load(f)
-            USE_RUMBLE = config.get("RUMBLE", USE_RUMBLE)
+            USE_UDP = config.get("USE_UDP", False)
+            USE_RUMBLE = config.get("USE_RUMBLE", False)
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", SEND_FULL_STATE)
-            print(f"🛠️ Loaded config: Rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
+            print(f"🛠️ Loaded config: Rumble ={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
         except Exception as e:
             print("❌ Error reading config:", e)
 
 capabilities = {
-    e.EV_KEY:{
+    e.EV_KEY: [
         e.BTN_A, e.BTN_B, e.BTN_X, e.BTN_Y,
         e.BTN_TL, e.BTN_TR, e.BTN_SELECT, e.BTN_START,
         e.BTN_THUMBL, e.BTN_THUMBR,
         e.BTN_DPAD_UP, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_RIGHT
-    },
+    ],
     e.EV_ABS: {
         e.ABS_X: (-32768, 32767, 0, 0),
         e.ABS_Y: (-32768, 32767, 0, 0),
@@ -39,13 +40,10 @@ capabilities = {
         e.ABS_RZ: (0, 255, 0, 0),
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
-    },
-    e.EV_FF:{
-        e.FF_RUMBLE
     }
 }
 
-ui = UInput(capabilities, name="Steamdeck", version=0x3)
+ui = UInput(capabilities, name="Virtual Gamepad", version=0x3)
 
 button_map = {
     'BTN_0': e.BTN_A, 'BTN_1': e.BTN_B, 'BTN_2': e.BTN_X, 'BTN_3': e.BTN_Y,
@@ -181,13 +179,12 @@ def config_server():
             conn, addr = s.accept()
             with conn:
                 config_data = json.dumps({
+                    "USE_UDP": USE_UDP,
                     "SEND_FULL_STATE": SEND_FULL_STATE,
-                    "USE_RUMBLE" : USE_RUMBLE
+                    "RUMBLE": USE_RUMBLE
                 })
                 conn.sendall(config_data.encode())
 
-def vibration_thread():
-    pass
 
 def run_ui():
     root = tk.Tk()
@@ -252,7 +249,5 @@ if __name__ == "__main__":
     threading.Thread(target=socket_thread, daemon=True).start()
     if SHOW_UI:
         run_ui()
-    if USE_RUMBLE:
-        threading.Thread(target=vibration_thread, daemon=True).start()
     else:
         threading.Event().wait()

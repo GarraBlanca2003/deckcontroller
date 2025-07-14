@@ -1,5 +1,5 @@
 {
   "USE_UDP": false,
-  "SEND_FULL_STATE": false,
-  "RUMBLE" : true
+  "SEND_FULL_STATE": true,
+  "USE_RUMBLE" : true
 }
