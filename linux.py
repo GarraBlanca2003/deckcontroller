@@ -8,12 +8,11 @@ import os
 SHOW_UI = True
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
-DEBUG_PORT = 5002
 CONFIG_PATH = "config.json"
 slider_rumble = 0
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = True
+DEBUG = False
 
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:
@@ -173,6 +172,8 @@ def controller_server():
                             handle_event(event['data']['code'], event['data']['state'])
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
+                        elif event['type'] == 'debug':
+                            print()
                         response = {
                             "RUMBLE": slider_rumble
                         }
@@ -199,31 +200,8 @@ def config_server():
                     "SEND_FULL_STATE": SEND_FULL_STATE,
                     "RUMBLE": USE_RUMBLE,
                     "DEBUG" : DEBUG
-
                 })
                 conn.sendall(config_data.encode())
-
-def debug_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("0.0.0.0", DEBUG_PORT))
-        server.listen(1)
-        print(f"[DEBUG] Listening on {DEBUG_PORT}...")
-
-        conn, addr = server.accept()
-        with conn:
-            print(f"[DEBUG] Connected by {addr}")
-            buffer = ""
-            while True:
-                data = conn.recv(1024)
-                if not data:
-                    print("[DEBUG] Connection closed.")
-                    break
-                buffer += data.decode()
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    print(f"[DEBUG] {line}")
-
 
 def run_ui():
     root = tk.Tk()

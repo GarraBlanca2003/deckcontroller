@@ -12,7 +12,6 @@ import ipaddress
 SERVER_IP = ""
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
-DEBUG_PORT = 5002
 RETRY_DELAY = 3
 SCAN_TIMEOUT = 1
 
@@ -144,13 +143,9 @@ def send(sock, payload):
                 
     except socket.error:
         raise ConnectionError("Lost connection")
-def debug_log(text):
+def debug_log(sock,text):
     if DEBUG:
-        try:
-            with socket.create_connection((SERVER_IP, DEBUG_PORT)) as sock:
-                sock.sendall(text.encode())
-        except socket.error:
-            raise ConnectionError("Lost connection")
+        send(sock, {'type': 'debug', 'data': f'{text}' })
 def draw_status(message):
     screen.fill((20, 20, 20))
     label = font.render(message, True, (200, 200, 200))
