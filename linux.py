@@ -13,7 +13,7 @@ CONFIG_PATH = "config.json"
 slider_rumble = 0
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = True
+DEBUG = False
 
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:

@@ -214,7 +214,7 @@ def main():
                             'hat': hat
                         }
                     })
-                    rumble(response["RUMBLE"])
+                    #rumble(response["RUMBLE"])
                 else:
                     send(sock, {
                         'type': 'full_state',
