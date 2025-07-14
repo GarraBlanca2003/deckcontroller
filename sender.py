@@ -15,8 +15,10 @@ CONFIG_PORT = 5001
 RETRY_DELAY = 3
 SCAN_TIMEOUT = 1
 
-USE_UDP = False
+USE_RUMBLE = False
 SEND_FULL_STATE = False
+
+rumble = 0
 
 pygame.init()
 pygame.display.set_caption("Input Sender")
@@ -25,15 +27,15 @@ font = pygame.font.SysFont("monospace", 20)
 clock = pygame.time.Clock()
 
 def fetch_config_from_receiver():
-    global USE_UDP, SEND_FULL_STATE
+    global USE_RUMBLE, SEND_FULL_STATE
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_IP, CONFIG_PORT))
             data = s.recv(1024)
             config = json.loads(data.decode())
-            USE_UDP = config.get("USE_UDP", False)
+            USE_RUMBLE = config.get("RUMBLE", False)
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", False)
-            print(f"📡 Got config: UDP={USE_UDP}, FullState={SEND_FULL_STATE}")
+            print(f"📡 Got config: rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
     except Exception as e:
         print("❌ Could not get config from receiver:", e)
 
@@ -117,13 +119,9 @@ def ask_for_ip():
 def connect():
     while True:
         try:
-            if USE_UDP:
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                return s
-            else:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect((SERVER_IP, SERVER_PORT))
-                return s
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((SERVER_IP, SERVER_PORT))
+            return s
         except socket.error:
             pygame.display.set_caption("Input Sender - Disconnected")
             draw_status("Connection error ")
@@ -132,9 +130,6 @@ def connect():
 def send(sock, payload):
     message = json.dumps(payload)
     try:
-        if USE_UDP:
-            sock.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
-        else:
             sock.sendall((message + '\n').encode())
     except socket.error:
         raise ConnectionError("Lost connection")
@@ -186,8 +181,10 @@ def main():
                 draw_status("Paused (unfocused)")
                 time.sleep(0.1)
                 continue
-
-            draw_status("")
+            if USE_RUMBLE:
+                draw_status(f"RUMBLE: {rumble}")
+            else:
+                draw_status("")
 
             if SEND_FULL_STATE:
                 axes = [round(joystick.get_axis(i), 2) for i in range(joystick.get_numaxes())]

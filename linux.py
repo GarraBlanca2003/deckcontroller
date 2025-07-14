@@ -5,32 +5,31 @@ import tkinter as tk
 from evdev import UInput, ecodes as e
 import os
 
-SHOW_UI = True
+SHOW_UI = False
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
 CONFIG_PATH = "config.json"
+vibration = 0
 
-
-USE_UDP = False
 SEND_FULL_STATE = False
-
+USE_RUMBLE = False
 if os.path.exists(CONFIG_PATH):
     with open(CONFIG_PATH, "r") as f:
         try:
             config = json.load(f)
-            USE_UDP = config.get("USE_UDP", USE_UDP)
+            USE_RUMBLE = config.get("RUMBLE", USE_RUMBLE)
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", SEND_FULL_STATE)
-            print(f"🛠️ Loaded config: UDP={USE_UDP}, FullState={SEND_FULL_STATE}")
+            print(f"🛠️ Loaded config: Rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
         except Exception as e:
             print("❌ Error reading config:", e)
 
 capabilities = {
-    e.EV_KEY: [
+    e.EV_KEY:{
         e.BTN_A, e.BTN_B, e.BTN_X, e.BTN_Y,
         e.BTN_TL, e.BTN_TR, e.BTN_SELECT, e.BTN_START,
         e.BTN_THUMBL, e.BTN_THUMBR,
         e.BTN_DPAD_UP, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_RIGHT
-    ],
+    },
     e.EV_ABS: {
         e.ABS_X: (-32768, 32767, 0, 0),
         e.ABS_Y: (-32768, 32767, 0, 0),
@@ -40,10 +39,13 @@ capabilities = {
         e.ABS_RZ: (0, 255, 0, 0),
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
+    },
+    e.EV_FF:{
+        e.FF_RUMBLE
     }
 }
 
-ui = UInput(capabilities, name="Virtual Gamepad", version=0x3)
+ui = UInput(capabilities, name="Steamdeck", version=0x3)
 
 button_map = {
     'BTN_0': e.BTN_A, 'BTN_1': e.BTN_B, 'BTN_2': e.BTN_X, 'BTN_3': e.BTN_Y,
@@ -170,21 +172,6 @@ def socket_thread():
             print("❌ Socket error:", ex)
         print("🔄 Waiting for new connection...")
 
-def udp_server():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", SERVER_PORT))
-    print("📡 UDP server started")
-    while True:
-        try:
-            data, addr = sock.recvfrom(2048)
-            event = json.loads(data.decode())
-            if event['type'] == 'gamepad':
-                handle_event(event['data']['code'], event['data']['state'])
-            elif event['type'] == 'full_state':
-                apply_full_state(event['data'])
-        except Exception as e:
-            print("❌ UDP error:", e)
-
 def config_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("0.0.0.0", CONFIG_PORT))
@@ -194,11 +181,13 @@ def config_server():
             conn, addr = s.accept()
             with conn:
                 config_data = json.dumps({
-                    "USE_UDP": USE_UDP,
-                    "SEND_FULL_STATE": SEND_FULL_STATE
+                    "SEND_FULL_STATE": SEND_FULL_STATE,
+                    "USE_RUMBLE" : USE_RUMBLE
                 })
                 conn.sendall(config_data.encode())
 
+def vibration_thread():
+    pass
 
 def run_ui():
     root = tk.Tk()
@@ -260,11 +249,10 @@ def run_ui():
 
 if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
-    if USE_UDP:
-        threading.Thread(target=udp_server, daemon=True).start()
-    else:
-        threading.Thread(target=socket_thread, daemon=True).start()
+    threading.Thread(target=socket_thread, daemon=True).start()
     if SHOW_UI:
         run_ui()
+    if USE_RUMBLE:
+        threading.Thread(target=vibration_thread, daemon=True).start()
     else:
         threading.Event().wait()
