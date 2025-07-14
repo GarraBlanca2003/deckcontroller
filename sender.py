@@ -146,9 +146,11 @@ def send(sock, payload):
         raise ConnectionError("Lost connection")
 def debug_log(text):
     if DEBUG:
-        with socket.create_connection((SERVER_IP, DEBUG_PORT)) as sock:
-            sock.sendall(text.encode())
-
+        try:
+            with socket.create_connection((SERVER_IP, DEBUG_PORT)) as sock:
+                sock.sendall(text.encode())
+        except socket.error:
+            raise ConnectionError("Lost connection")
 def draw_status(message):
     screen.fill((20, 20, 20))
     label = font.render(message, True, (200, 200, 200))
@@ -157,7 +159,8 @@ def draw_status(message):
 
 def rumble(rumble_power):
     if USE_RUMBLE:
-        debug_log(f"rumble : {rumble_power}")
+        pass
+        #debug_log(f"rumble : {rumble_power}")
         #pygame.joystick.Joystick.rumble(1,1,100)
 def main():
     global SERVER_IP
