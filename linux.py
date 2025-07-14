@@ -173,7 +173,7 @@ def controller_server():
                         elif event['type'] == 'full_state':
                             apply_full_state(event['data'])
                         elif event['type'] == 'debug':
-                            print()
+                            print(f'[DEBUG]{event['data']}')
                         response = {
                             "RUMBLE": slider_rumble
                         }
