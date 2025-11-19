@@ -106,7 +106,9 @@ fi
 
 if [ -f "$SCRIPT" ]; then
     echo "[INFO] Launching sender.py..."
-    "$VENV_DIR/bin/python" "$SCRIPT"
+    konsole --hold -e "$VENV_DIR/.venv/bin/python3.13 ./sender.py"
+    read  -n 1 -p "press any key to continue" mainmenuinput
+    #"$VENV_DIR/bin/python" "$SCRIPT"
 else
     echo "[ERROR] sender.py not found at $SCRIPT."
     exit 1
