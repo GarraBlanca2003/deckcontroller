@@ -217,8 +217,7 @@ def main():
                 else:
                     #QUICK DUMB RE BINDING
                     #TODO: better re-binding
-                    print(f"buttons:{len(buttons)}")
-                    if len(buttons) <= 10:
+                    if len(buttons) == 12:
                         buttons[2],buttons[3] = buttons[3],buttons[2]
 
                         buttons[8],buttons[6] = buttons[6],buttons[8]
@@ -228,11 +227,13 @@ def main():
                         buttons[11],buttons[8] = buttons[8],buttons[11]
 
                         axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
-                   # axes[3],axes[4]= axes[4], axes[3] 
+                    if len(buttons) == 11:# steamdeck detected
+                        axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
+                        
+                        #print(f"buttons:{len(buttons)}")
+                   #    axes[3],axes[4]= axes[4], axes[3] 
                     
-                    # 0 1 2 3 4 5 6
-                    # 0 1 3 2 4 5 6
-                    # 0 1 2 4 3 5 6
+
                     #print(f"'axes': {axes},'buttons': {buttons},'hat': {hat}")
                     
                     send(sock, {
