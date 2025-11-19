@@ -265,7 +265,7 @@ def main():
                         "type": "full_state",
                         "data": {"axes": axes, "buttons": buttons, "hat": hat}
                     })
-                    print({"type": "full_state","data": {"axes": axes, "buttons": buttons,"hat": hat}})
+                    #print({"type": "full_state","data": {"axes": axes, "buttons": buttons,"hat": hat}})
 
             # -------------------------
             # SEND ONLY CHANGES
