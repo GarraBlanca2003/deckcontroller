@@ -212,8 +212,27 @@ def main():
                             'hat': hat
                         }
                     })
-                    rumble(sock,response["RUMBLE"])
+                    pass
+                    #rumble(sock,response["RUMBLE"])
                 else:
+                    #QUICK DUMB RE BINDING
+                    #TODO: better re-binding  
+                    buttons[2],buttons[3] = buttons[3],buttons[2]
+
+                    buttons[8],buttons[6] = buttons[6],buttons[8]
+                    buttons[9],buttons[7] = buttons[7],buttons[9]
+
+                    buttons[12],buttons[9] = buttons[9],buttons[12]
+                    buttons[11],buttons[8] = buttons[8],buttons[11]
+
+                    axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
+                   # axes[3],axes[4]= axes[4], axes[3] 
+                    
+                    # 0 1 2 3 4 5 6
+                    # 0 1 3 2 4 5 6
+                    # 0 1 2 4 3 5 6
+                    #print(f"'axes': {axes},'buttons': {buttons},'hat': {hat}")
+                    
                     send(sock, {
                         'type': 'full_state',
                         'data': {
@@ -250,7 +269,8 @@ def main():
                     })
                 
             if USE_RUMBLE:
-                draw_status(f"RUMBLE: {response["RUMBLE"]}")
+                pass
+                #draw_status(f"RUMBLE: {response["RUMBLE"]}")
             else:
                 draw_status("")
 

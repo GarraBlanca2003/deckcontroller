@@ -2,29 +2,40 @@ import socket
 import json
 import threading
 import tkinter as tk
+from tkinter import ttk
 from evdev import UInput, ecodes as e
 import os
+import traceback
 
+# -----------------------
+# Config / constants
+# -----------------------
 SHOW_UI = True
 SERVER_PORT = 5000
 CONFIG_PORT = 5001
 CONFIG_PATH = "config.json"
-slider_rumble = 0
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = False
+DEBUG = True
 
+# -----------------------
+# Load config (optional)
+# -----------------------
 if os.path.exists(CONFIG_PATH):
-    with open(CONFIG_PATH, "r") as f:
-        try:
-            config = json.load(f)
-            USE_UDP = config.get("USE_UDP", False)
-            USE_RUMBLE = config.get("USE_RUMBLE", False)
-            SEND_FULL_STATE = config.get("SEND_FULL_STATE", SEND_FULL_STATE)
-            print(f"🛠️ Loaded config: Rumble ={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
-        except Exception as e:
-            print("❌ Error reading config:", e)
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            cfg = json.load(f)
+            USE_UDP = cfg.get("USE_UDP", False)
+            USE_RUMBLE = cfg.get("USE_RUMBLE", False)
+            SEND_FULL_STATE = cfg.get("SEND_FULL_STATE", SEND_FULL_STATE)
+            DEBUG = cfg.get("DEBUG", DEBUG)
+            print(f"🛠️ Loaded config: Rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}, Debug={DEBUG}")
+    except Exception as ex:
+        print("❌ Error reading config:", ex)
 
+# -----------------------
+# evdev virtual device
+# -----------------------
 capabilities = {
     e.EV_KEY: [
         e.BTN_A, e.BTN_B, e.BTN_X, e.BTN_Y,
@@ -42,21 +53,18 @@ capabilities = {
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
     },
-    e.EV_FF:{
-        e.FF_RUMBLE
-    }
+    e.EV_FF: { e.FF_RUMBLE }
 }
 
-ui = UInput(capabilities, name="Virtual Gamepad", version=0x3,bustype=e.BUS_USB)
+ui = UInput(capabilities, name="Virtual Gamepad", version=0x3, bustype=e.BUS_USB)
 
+# -----------------------
+# Mappings & helpers
+# -----------------------
 button_map = {
     'BTN_0': e.BTN_A, 'BTN_1': e.BTN_B, 'BTN_2': e.BTN_X, 'BTN_3': e.BTN_Y,
-    'BTN_4': e.BTN_TL,
-    'BTN_5': e.BTN_TR,
-    'BTN_6': e.BTN_SELECT,
-    'BTN_7': e.BTN_START,
-    'BTN_9': e.BTN_THUMBL,
-    'BTN_10': e.BTN_THUMBR,
+    'BTN_4': e.BTN_TL, 'BTN_5': e.BTN_TR, 'BTN_6': e.BTN_SELECT, 'BTN_7': e.BTN_START,
+    'BTN_9': e.BTN_THUMBL, 'BTN_10': e.BTN_THUMBR,
     'HAT_0_UP': e.BTN_DPAD_UP, 'HAT_0_DOWN': e.BTN_DPAD_DOWN,
     'HAT_0_LEFT': e.BTN_DPAD_LEFT, 'HAT_0_RIGHT': e.BTN_DPAD_RIGHT
 }
@@ -68,175 +76,341 @@ axis_map = {
     'HAT_0': (e.ABS_HAT0X, e.ABS_HAT0Y)
 }
 
-state = {
-    'buttons': set(),
-    'axes': {
-        'LS_x': 0, 'LS_y': 0,
-        'RS_x': 0, 'RS_y': 0,
-        'LT': 0, 'RT': 0
-    },
-    'dpad': (0, 0)
-}
+def make_empty_state():
+    return {
+        'buttons': set(),
+        'axes': {
+            'LS_x': 0, 'LS_y': 0,
+            'RS_x': 0, 'RS_y': 0,
+            'LT': 0, 'RT': 0
+        },
+        'dpad': (0, 0)
+    }
 
+# -----------------------
+# Global server state
+# -----------------------
+clients = {}                # client_id -> (conn, addr)
+client_states = {}          # client_id -> state dict
+clients_lock = threading.Lock()
+next_client_id = 1
+
+# UI references (set in run_ui)
+root = None
+notebook = None
+client_tabs = {}            # client_id -> (frame, widgets dict)
+status_label_var = None
+
+# -----------------------
+# Event handling (writes to virtual device)
+# -----------------------
 current_dpad_buttons = set()
 
-def handle_event(code, value):
-    if code.startswith("BTN_"):
-        ev = button_map.get(code)
-        if ev:
-            ui.write(e.EV_KEY, ev, int(value))
-            ui.syn()
-        if SHOW_UI:
-            if value:
-                state['buttons'].add(code)
-            else:
-                state['buttons'].discard(code)
+def handle_event(code, value, target_state=None):
+    """Apply event to virtual device and optionally to a per-client state dict (target_state)."""
+    global current_dpad_buttons
 
-    elif code.startswith("AXIS_"):
+    if target_state is None:
+        # if no per-client state provided, we won't update UI state
+        pass
+
+    # BUTTONS
+    if isinstance(code, str) and code.startswith("BTN_"):
+        ev = button_map.get(code)
+        if ev is not None:
+            try:
+                ui.write(e.EV_KEY, ev, int(value))
+                ui.syn()
+            except Exception:
+                if DEBUG: print("❌ evdev write error for button:", traceback.format_exc())
+        # update per-client UI state
+        if target_state is not None:
+            if value:
+                target_state['buttons'].add(code)
+            else:
+                target_state['buttons'].discard(code)
+
+    # AXES (single numeric or already scaled)
+    elif isinstance(code, str) and code.startswith("AXIS_"):
         ev = axis_map.get(code)
         if isinstance(ev, int):
-            val = int(value * 32767) if abs(value) <= 1 else value
-            ui.write(e.EV_ABS, ev, val)
-            ui.syn()
+            # value might be float in -1..1 or int already
+            try:
+                if isinstance(value, float) and abs(value) <= 1:
+                    val = int(value * 32767)
+                else:
+                    val = int(value)
+                ui.write(e.EV_ABS, ev, val)
+                ui.syn()
+            except Exception:
+                if DEBUG: print("❌ evdev write error for axis:", traceback.format_exc())
 
-        if SHOW_UI:
-            if code == "AXIS_0": state['axes']['LS_x'] = value
-            if code == "AXIS_1": state['axes']['LS_y'] = value
-            if code == "AXIS_3": state['axes']['RS_x'] = value
-            if code == "AXIS_4": state['axes']['RS_y'] = value
-            if code == "AXIS_2": state['axes']['LT'] = (value + 1) / 2
-            if code == "AXIS_5": state['axes']['RT'] = (value + 1) / 2
+        # update per-client UI state
+        if target_state is not None:
+            if code == "AXIS_0": target_state['axes']['LS_x'] = value
+            if code == "AXIS_1": target_state['axes']['LS_y'] = value
+            if code == "AXIS_2": target_state['axes']['RS_x'] = value
+            if code == "AXIS_3": target_state['axes']['RS_y'] = value
+            if code == "AXIS_4":
+                try:
+                    target_state['axes']['LT'] = (value + 1) / 2 if isinstance(value, (int, float)) else value
+                except:
+                    pass
+            if code == "AXIS_5":
+                try:
+                    target_state['axes']['RT'] = (value + 1) / 2 if isinstance(value, (int, float)) else value
+                except:
+                    pass
 
+    # HAT (x,y)
     elif code == "HAT_0":
-        global current_dpad_buttons
         x, y = value
-
-        for btn in current_dpad_buttons:
-            ui.write(e.EV_KEY, btn, 0)
+        # clear previous
+        for btn in list(current_dpad_buttons):
+            try:
+                ui.write(e.EV_KEY, btn, 0)
+            except:
+                pass
         current_dpad_buttons.clear()
 
         if x == -1:
-            ui.write(e.EV_KEY, e.BTN_DPAD_LEFT, 1)
-            current_dpad_buttons.add(e.BTN_DPAD_LEFT)
+            ui.write(e.EV_KEY, e.BTN_DPAD_LEFT, 1); current_dpad_buttons.add(e.BTN_DPAD_LEFT)
         elif x == 1:
-            ui.write(e.EV_KEY, e.BTN_DPAD_RIGHT, 1)
-            current_dpad_buttons.add(e.BTN_DPAD_RIGHT)
+            ui.write(e.EV_KEY, e.BTN_DPAD_RIGHT, 1); current_dpad_buttons.add(e.BTN_DPAD_RIGHT)
 
         if y == 1:
-            ui.write(e.EV_KEY, e.BTN_DPAD_UP, 1)
-            current_dpad_buttons.add(e.BTN_DPAD_UP)
+            ui.write(e.EV_KEY, e.BTN_DPAD_UP, 1); current_dpad_buttons.add(e.BTN_DPAD_UP)
         elif y == -1:
-            ui.write(e.EV_KEY, e.BTN_DPAD_DOWN, 1)
-            current_dpad_buttons.add(e.BTN_DPAD_DOWN)
+            ui.write(e.EV_KEY, e.BTN_DPAD_DOWN, 1); current_dpad_buttons.add(e.BTN_DPAD_DOWN)
 
-        ui.write(e.EV_ABS, e.ABS_HAT0X, x)
-        ui.write(e.EV_ABS, e.ABS_HAT0Y, y)
-        ui.syn()
+        try:
+            ui.write(e.EV_ABS, e.ABS_HAT0X, x)
+            ui.write(e.EV_ABS, e.ABS_HAT0Y, y)
+            ui.syn()
+        except Exception:
+            if DEBUG: print("❌ evdev write error for hat:", traceback.format_exc())
 
-        if SHOW_UI:
-            state['dpad'] = (x, y)
+        if target_state is not None:
+            target_state['dpad'] = (x, y)
 
-def apply_full_state(data):
-    for i, val in enumerate(data['axes']):
-        handle_event(f"AXIS_{i}", val)
-    for i, val in enumerate(data['buttons']):
-        handle_event(f"BTN_{i}", val)
-    handle_event("HAT_0", data['hat'])
+def apply_full_state(data, target_state=None):
+    for i, val in enumerate(data.get('axes', [])):
+        handle_event(f"AXIS_{i}", val, target_state=target_state)
+    for i, val in enumerate(data.get('buttons', [])):
+        handle_event(f"BTN_{i}", val, target_state=target_state)
+    handle_event("HAT_0", data.get('hat', (0,0)), target_state=target_state)
+
+# -----------------------
+# Networking: client handler and server
+# -----------------------
+def handle_client(conn, addr, client_id):
+    """
+    Thread: read newline-delimited JSON messages from a client,
+    update that client's state (for UI) and write responses.
+    """
+    global clients, client_states
+    print(f"🔌 Client #{client_id} handler started for {addr}")
+    buffer = ""
+    try:
+        conn.settimeout(None)
+        while True:
+            data = conn.recv(4096)
+            if not data:
+                print(f"⚠️ Client #{client_id} disconnected (no data).")
+                break
+            buffer += data.decode(errors='ignore')
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)
+                line = line.strip()
+                #print (line)
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except Exception as ex:
+                    print(f"❌ Client #{client_id} JSON decode error: {ex} -- raw: {line!r}")
+                    continue
+
+                # process event and update per-client state
+                st = None
+                with clients_lock:
+                    st = client_states.get(client_id)
+                try:
+                    etype = event.get('type')
+                    if etype == 'gamepad':
+                        d = event.get('data', {})
+                        handle_event(d.get('code'), d.get('state'), target_state=st)
+                    elif etype == 'full_state':
+                        apply_full_state(event.get('data', {}), target_state=st)
+                    elif etype == 'debug':
+                        print(f"[DEBUG #{client_id}] {event.get('data')}")
+                    else:
+                        if DEBUG:
+                            print(f"[CLIENT {client_id}] Unknown event type: {etype}")
+                except Exception:
+                    print(f"❌ Error processing event from client #{client_id}:\n{traceback.format_exc()}")
+
+                # prepare and send response (no slider/rumble UI)
+                with clients_lock:
+                    client_count = len(clients)
+                response = {
+                    "CLIENT_ID": client_id,
+                    "CLIENT_COUNT": client_count
+                }
+                try:
+                    conn.sendall((json.dumps(response) + "\n").encode())
+                except Exception as ex:
+                    print(f"❌ Error sending to client #{client_id}: {ex}")
+                    raise
+
+    except Exception as ex:
+        print(f"❌ Socket error in client #{client_id} handler: {ex}")
+    finally:
+        try:
+            conn.close()
+        except:
+            pass
+        with clients_lock:
+            if client_id in clients: del clients[client_id]
+            if client_id in client_states: del client_states[client_id]
+
+        remove_client_tab(client_id)
+        print(f"📴 Client #{client_id} disconnected. Connected clients: {len(clients)}")
+        update_status_label()
 
 def controller_server():
+    global next_client_id, clients
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", SERVER_PORT))
-    sock.listen(1)
-    print("🎮 Waiting for deck...")
-
+    sock.bind(("192.168.1.10", SERVER_PORT))
+    sock.listen(10)
+    print(f"🎮 Controller server listening on port {SERVER_PORT}")
     while True:
         try:
             conn, addr = sock.accept()
-            print(f"✅ Connected {addr}")
-            buffer = ""
-
-            while True:
-                data = conn.recv(1024)
-                if not data:
-                    print("⚠️ Connection closed by client.")
-                    break
-
-                buffer += data.decode()
-
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    try:
-                        event = json.loads(line)
-                        if event['type'] == 'gamepad':
-                            handle_event(event['data']['code'], event['data']['state'])
-                        elif event['type'] == 'full_state':
-                            apply_full_state(event['data'])
-                        elif event['type'] == 'debug':
-                            print(f'[DEBUG]{event['data']}')
-                        response = {
-                            "RUMBLE": slider_rumble
-                        }
-                        conn.sendall((json.dumps(response) + "\n").encode())
-
-                    except Exception as ex:
-                        print("❌ JSON decode error:", ex)
-
+            with clients_lock:
+                client_id = next_client_id
+                next_client_id += 1
+                clients[client_id] = (conn, addr)
+                client_states[client_id] = make_empty_state()
+            print(f"✅ New connection from {addr} assigned Client ID #{client_id}. Total clients: {len(clients)}")
+            # create UI tab
+            create_client_tab(client_id, addr)
+            update_status_label()
+            t = threading.Thread(target=handle_client, args=(conn, addr, client_id), daemon=True)
+            t.start()
         except Exception as ex:
-            print("❌ Socket error:", ex)
-
-        print("🔄 Waiting for new connection...")
+            print("❌ Socket accept error:", ex)
 
 def config_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("0.0.0.0", CONFIG_PORT))
-        s.listen(1)
+        s.listen(5)
         print("📡 Config server running on port", CONFIG_PORT)
         while True:
             conn, addr = s.accept()
             with conn:
                 config_data = json.dumps({
-                    "USE_UDP": USE_UDP,
+                    "USE_UDP": False,
                     "SEND_FULL_STATE": SEND_FULL_STATE,
                     "RUMBLE": USE_RUMBLE,
-                    "DEBUG" : DEBUG
+                    "DEBUG": DEBUG
                 })
-                conn.sendall(config_data.encode())
+                try:
+                    conn.sendall((config_data + "\n").encode())
+                except Exception as e:
+                    print("❌ Error sending config:", e)
 
-def run_ui():
-    root = tk.Tk()
-    root.title("Controller UI")
+# -----------------------
+# Tkinter UI: tabs per client
+# -----------------------
+def create_client_tab(client_id, addr):
+    """Create a new tab for client_id in the notebook (called from server thread)."""
+    if not SHOW_UI:
+        return
+    def _create():
+        global notebook, client_tabs
+        tab = ttk.Frame(notebook)
+        notebook.add(tab, text=f"Client #{client_id}")
+        # top label with address
+        lbl = tk.Label(tab, text=f"ID: {client_id} — {addr[0]}:{addr[1]}", bg="black", fg="white")
+        lbl.pack(anchor="w", pady=(4,0))
+        # small status label to show button list
+        btn_frame = tk.Frame(tab, bg="black")
+        btn_frame.pack(side="left", padx=8, pady=8, anchor="n")
+        # Canvas to draw buttons/axes/dpad for this client
+        canvas = tk.Canvas(tab, width=420, height=300, bg="black")
+        canvas.pack(side="left", padx=6, pady=6)
 
-    # UI layout: use a Frame to hold both canvas and slider
-    main_frame = tk.Frame(root, bg="black")
-    main_frame.pack()
+        client_tabs[client_id] = {
+            'frame': tab,
+            'label': lbl,
+            'canvas': canvas,
+        }
+    # UI actions must run in main thread
+    try:
+        root.after(0, _create)
+    except Exception:
+        # if root isn't available, ignore (headless)
+        pass
 
-    canvas = tk.Canvas(main_frame, width=400, height=300, bg="black")
-    canvas.pack()
+def remove_client_tab(client_id):
+    """Remove tab for client_id from notebook (called by network threads)."""
+    if not SHOW_UI:
+        return
+    def _remove():
+        global notebook, client_tabs
+        entry = client_tabs.pop(client_id, None)
+        if entry:
+            try:
+                notebook.forget(entry['frame'])
+            except Exception:
+                pass
+    try:
+        root.after(0, _remove)
+    except Exception:
+        pass
 
-    # Slider callback (optional: link to something)
-    def on_slider_change(value):
-        slider_rumble = value
-        #print("Slider value:", value)  # You can modify this to send data back to the sender if needed
+def update_status_label():
+    """Update the small status label and window title with count"""
+    if not SHOW_UI:
+        return
+    def _update():
+        count = 0
+        with clients_lock:
+            count = len(clients)
+        if status_label_var is not None:
+            status_label_var.set(f"Connected clients: {count}")
+        try:
+            root.title(f"Controller UI — {count} clients")
+        except Exception:
+            pass
+    try:
+        root.after(0, _update)
+    except Exception:
+        pass
 
-    # Add a horizontal slider from 0 to 100
-    slider = tk.Scale(
-        main_frame,
-        from_=0,
-        to=100,
-        orient=tk.HORIZONTAL,
-        length=300,
-        label="Custom Slider",
-        command=on_slider_change,
-        troughcolor="gray",
-        fg="white",
-        bg="black",
-        highlightthickness=0
-    )
-    slider.pack(pady=10)
+def draw_client_canvas(client_id):
+    """Draw the client's inputs onto its canvas (called periodically from UI thread)."""
+    entry = client_tabs.get(client_id)
+    if not entry:
+        return
+    canvas = entry['canvas']
+    canvas.delete("all")
+    st = None
+    with clients_lock:
+        st = client_states.get(client_id)
+    if st is None:
+        canvas.create_text(200, 140, text="No state yet", fill="white")
+        return
 
+    # Header
+    canvas.create_text(210, 18, text=f"Client #{client_id}", fill="white")
+
+    # Buttons (positions similar to your original layout)
     def dpad_active(name):
-        x, y = state['dpad']
+        x, y = st['dpad']
         return (
             (name == "HAT_0_UP" and y == 1) or
             (name == "HAT_0_DOWN" and y == -1) or
@@ -245,52 +419,93 @@ def run_ui():
         )
 
     def draw_btn(name, x, y):
-        color = "lime" if name in state['buttons'] or dpad_active(name) else "gray"
+        color = "lime" if (name in st['buttons'] or dpad_active(name)) else "gray"
         canvas.create_oval(x-10, y-10, x+10, y+10, fill=color)
 
-    def redraw():
-        canvas.delete("all")
-        canvas.create_text(200, 20, text="Gamepad Monitor", fill="white")
+    draw_btn("BTN_0", 300, 150)
+    draw_btn("BTN_1", 330, 120)
+    draw_btn("BTN_2", 270, 120)
+    draw_btn("BTN_3", 300, 90)
+    draw_btn("HAT_0_UP", 70, 100)
+    draw_btn("HAT_0_DOWN", 70, 140)
+    draw_btn("HAT_0_LEFT", 40, 120)
+    draw_btn("HAT_0_RIGHT", 100, 120)
+    draw_btn("BTN_4", 100, 40)
+    draw_btn("BTN_5", 300, 40)
+    draw_btn("BTN_6", 180, 100)
+    draw_btn("BTN_7", 220, 100)
+    draw_btn("BTN_8", 100, 200)
+    draw_btn("BTN_9", 300, 200)
 
-        draw_btn("BTN_0", 300, 150)
-        draw_btn("BTN_1", 330, 120)
-        draw_btn("BTN_2", 270, 120)
-        draw_btn("BTN_3", 300, 90)
-        draw_btn("HAT_0_UP", 70, 100)
-        draw_btn("HAT_0_DOWN", 70, 140)
-        draw_btn("HAT_0_LEFT", 40, 120)
-        draw_btn("HAT_0_RIGHT", 100, 120)
-        draw_btn("BTN_4", 100, 40)
-        draw_btn("BTN_5", 300, 40)
-        draw_btn("BTN_6", 180, 100)
-        draw_btn("BTN_7", 220, 100)
-        draw_btn("BTN_8", 100, 200)
-        draw_btn("BTN_9", 300, 200)
+    # Triggers LT / RT
+    canvas.create_text(70, 250, text="LT", fill="white")
+    canvas.create_rectangle(100, 240, 150, 260, outline="white")
+    try:
+        canvas.create_rectangle(100, 240, 100 + int(50 * float(st['axes']['LT'])), 260, fill="red")
+    except Exception:
+        canvas.create_rectangle(100, 240, 100, 260, fill="red")
 
-        canvas.create_text(70, 250, text="LT", fill="white")
-        canvas.create_rectangle(100, 240, 150, 260, outline="white")
-        canvas.create_rectangle(100, 240, 100 + int(50 * state['axes']['LT']), 260, fill="red")
+    canvas.create_text(250, 250, text="RT", fill="white")
+    canvas.create_rectangle(280, 240, 330, 260, outline="white")
+    try:
+        canvas.create_rectangle(280, 240, 280 + int(50 * float(st['axes']['RT'])), 260, fill="red")
+    except Exception:
+        canvas.create_rectangle(280, 240, 280, 260, fill="red")
 
-        canvas.create_text(250, 250, text="RT", fill="white")
-        canvas.create_rectangle(280, 240, 330, 260, outline="white")
-        canvas.create_rectangle(280, 240, 280 + int(50 * state['axes']['RT']), 260, fill="red")
-
-        lx = 100 + int(state['axes']['LS_x'] * 20)
-        ly = 200 + int(state['axes']['LS_y'] * 20)
+    # Left stick
+    try:
+        lx = 100 + int(float(st['axes']['LS_x']) * 20)
+        ly = 200 + int(float(st['axes']['LS_y']) * 20)
         canvas.create_oval(lx-5, ly-5, lx+5, ly+5, fill="blue")
+    except Exception:
+        canvas.create_oval(95, 195, 105, 205, fill="blue")
 
-        rx = 300 + int(state['axes']['RS_x'] * 20)
-        ry = 200 + int(state['axes']['RS_y'] * 20)
+    # Right stick
+    try:
+        rx = 300 + int(float(st['axes']['RS_x']) * 20)
+        ry = 200 + int(float(st['axes']['RS_y']) * 20)
         canvas.create_oval(rx-5, ry-5, rx+5, ry+5, fill="blue")
-        root.after(50, redraw)
+    except Exception:
+        canvas.create_oval(295, 195, 305, 205, fill="blue")
 
-    redraw()
+def ui_refresh_loop():
+    """Called periodically in the UI thread to redraw all client canvases."""
+    if not SHOW_UI:
+        return
+    for cid in list(client_tabs.keys()):
+        draw_client_canvas(cid)
+    root.after(50, ui_refresh_loop)
+
+def run_ui():
+    """Starts Tkinter UI: Notebook tabs for each client and status label."""
+    global root, notebook, status_label_var
+    root = tk.Tk()
+    root.configure(bg="black")
+    root.title("Controller UI — 0 clients")
+
+    # Notebook (tabs)
+    notebook = ttk.Notebook(root)
+    notebook.pack(fill="both", expand=True, padx=6, pady=6)
+
+    # status label
+    status_label_var = tk.StringVar(value="Connected clients: 0")
+    status_label = tk.Label(root, textvariable=status_label_var, bg="black", fg="white")
+    status_label.pack(anchor="w", padx=6, pady=(0,6))
+
+    # start periodic UI refresh
+    root.after(50, ui_refresh_loop)
     root.mainloop()
+
+# -----------------------
+# Main entry
+# -----------------------
 if __name__ == "__main__":
+    # start config server
     threading.Thread(target=config_server, daemon=True).start()
+    # start controller server (multi-client)
     threading.Thread(target=controller_server, daemon=True).start()
-    if DEBUG:
-        threading.Thread(target=debug_server, daemon=True).start()
+
+    # Run UI in main thread if desired
     if SHOW_UI:
         run_ui()
     else:
