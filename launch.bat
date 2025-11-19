@@ -1,0 +1,1 @@
+C:\Users\Garra\Desktop\Code\deckcontroller\.venv\Scripts\python.exe c:/Users/Garra/Desktop/Code/deckcontroller/windows-send.py
