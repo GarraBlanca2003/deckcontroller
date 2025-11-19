@@ -4,6 +4,14 @@ import threading
 import vgamepad as vg
 
 SHOW_UI = False
+SERVER_PORT = 5000
+CONFIG_PORT = 5001
+
+slider_rumble = 0
+USE_RUMBLE = False
+USE_UDP = False
+SEND_FULL_STATE = False
+DEBUG = False
 
 gamepad = vg.VX360Gamepad()
 
@@ -72,8 +80,6 @@ def update_dpad():
     gamepad.update()
 
 def handle_event(code, value):
-    global axis_state, pressed_buttons
-
     if code.startswith("BTN_"):
         btn = button_map.get(code)
         if btn:
@@ -112,10 +118,29 @@ def handle_event(code, value):
         gamepad.right_trigger(value=axis_state['RT'])
         gamepad.update()
 
-def socket_thread():
+def apply_full_state(data):
+    for i, val in enumerate(data['axes']):
+        handle_event(f"AXIS_{i}", val)
+    for i, val in enumerate(data['buttons']):
+        handle_event(f"BTN_{i}", val)
+    handle_event("HAT_0_LEFT", 0)
+    handle_event("HAT_0_RIGHT", 0)
+    handle_event("HAT_0_UP", 0)
+    handle_event("HAT_0_DOWN", 0)
+    x, y = data['hat']
+    if x == -1:
+        handle_event("HAT_0_LEFT", 1)
+    elif x == 1:
+        handle_event("HAT_0_RIGHT", 1)
+    if y == 1:
+        handle_event("HAT_0_UP", 1)
+    elif y == -1:
+        handle_event("HAT_0_DOWN", 1)
+
+def controller_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", 5000))
+    sock.bind(("0.0.0.0", SERVER_PORT))
     sock.listen(1)
     print("🎮 Waiting for deck...")
 
@@ -123,8 +148,8 @@ def socket_thread():
         try:
             conn, addr = sock.accept()
             print(f"✅ Connected from {addr}")
-
             buffer = ""
+
             while True:
                 data = conn.recv(1024)
                 if not data:
@@ -138,20 +163,41 @@ def socket_thread():
                         event = json.loads(line)
                         if event['type'] == 'gamepad':
                             handle_event(event['data']['code'], event['data']['state'])
+                        elif event['type'] == 'full_state':
+                            apply_full_state(event['data'])
+
+                        # Send back rumble status
+                        conn.sendall((json.dumps({"RUMBLE": slider_rumble}) + "\n").encode())
+
                     except Exception as ex:
                         print("❌ JSON decode error:", ex)
-
         except Exception as ex:
             print("❌ Socket error:", ex)
 
         print("🔄 Waiting for new connection...")
 
+def config_server():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("0.0.0.0", CONFIG_PORT))
+        s.listen(1)
+        print("📡 Config server running on port", CONFIG_PORT)
+        while True:
+            conn, addr = s.accept()
+            with conn:
+                config_data = json.dumps({
+                    "USE_UDP": USE_UDP,
+                    "SEND_FULL_STATE": SEND_FULL_STATE,
+                    "RUMBLE": USE_RUMBLE,
+                    "DEBUG": DEBUG
+                })
+                conn.sendall(config_data.encode())
+
 def run_ui():
-    # No UI for Windows in this version
-    pass
+    pass  # Placeholder for future tkinter UI on Windows
 
 if __name__ == "__main__":
-    threading.Thread(target=socket_thread, daemon=True).start()
+    threading.Thread(target=config_server, daemon=True).start()
+    threading.Thread(target=controller_server, daemon=True).start()
     if SHOW_UI:
         run_ui()
     else:
