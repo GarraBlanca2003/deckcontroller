@@ -214,7 +214,7 @@ def handle_client(conn, addr, client_id):
             while '\n' in buffer:
                 line, buffer = buffer.split('\n', 1)
                 line = line.strip()
-                print (line)
+                #print (line)
                 if not line:
                     continue
                 try:
