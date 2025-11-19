@@ -56,8 +56,6 @@ capabilities = {
     e.EV_FF: { e.FF_RUMBLE }
 }
 
-ui = UInput(capabilities, name="Virtual Gamepad", version=0x3, bustype=e.BUS_USB)
-
 # -----------------------
 # Mappings & helpers
 # -----------------------
@@ -95,7 +93,7 @@ client_states = {}          # client_id -> state dict
 clients_lock = threading.Lock()
 next_client_id = 1
 
-# UI references (set in run_ui)
+
 root = None
 notebook = None
 client_tabs = {}            # client_id -> (frame, widgets dict)
@@ -106,12 +104,12 @@ status_label_var = None
 # -----------------------
 current_dpad_buttons = set()
 
-def handle_event(code, value, target_state=None):
+def handle_event(ui,client_id,code, value, target_state=None):
+    #print(f"user:{client_id}  code:{code} value:{value} ") 
     """Apply event to virtual device and optionally to a per-client state dict (target_state)."""
     global current_dpad_buttons
 
     if target_state is None:
-        # if no per-client state provided, we won't update UI state
         pass
 
     # BUTTONS
@@ -193,22 +191,16 @@ def handle_event(code, value, target_state=None):
         if target_state is not None:
             target_state['dpad'] = (x, y)
 
-def apply_full_state(data, target_state=None):
+def apply_full_state(ui,client_id,data, target_state=None):
     for i, val in enumerate(data.get('axes', [])):
-        handle_event(f"AXIS_{i}", val, target_state=target_state)
+        handle_event(ui,client_id,f"AXIS_{i}", val, target_state=target_state)
     for i, val in enumerate(data.get('buttons', [])):
-        handle_event(f"BTN_{i}", val, target_state=target_state)
-    handle_event("HAT_0", data.get('hat', (0,0)), target_state=target_state)
+        handle_event(ui,client_id,f"BTN_{i}", val, target_state=target_state)
+    handle_event(ui,client_id,"HAT_0", data.get('hat', (0,0)), target_state=target_state)
 
-# -----------------------
-# Networking: client handler and server
-# -----------------------
 def handle_client(conn, addr, client_id):
-    """
-    Thread: read newline-delimited JSON messages from a client,
-    update that client's state (for UI) and write responses.
-    """
     global clients, client_states
+    ui = UInput(capabilities, name=f"Virtual Gamepad -{client_id}", version=0x3, bustype=e.BUS_USB)
     print(f"🔌 Client #{client_id} handler started for {addr}")
     buffer = ""
     try:
@@ -239,9 +231,9 @@ def handle_client(conn, addr, client_id):
                     etype = event.get('type')
                     if etype == 'gamepad':
                         d = event.get('data', {})
-                        handle_event(d.get('code'), d.get('state'), target_state=st)
+                        handle_event(ui,client_id,d.get('code'), d.get('state'), target_state=st)
                     elif etype == 'full_state':
-                        apply_full_state(event.get('data', {}), target_state=st)
+                        apply_full_state(ui,client_id,event.get('data', {}), target_state=st)
                     elif etype == 'debug':
                         print(f"[DEBUG #{client_id}] {event.get('data')}")
                     else:
@@ -250,7 +242,7 @@ def handle_client(conn, addr, client_id):
                 except Exception:
                     print(f"❌ Error processing event from client #{client_id}:\n{traceback.format_exc()}")
 
-                # prepare and send response (no slider/rumble UI)
+                # prepare and send response
                 with clients_lock:
                     client_count = len(clients)
                 response = {
@@ -267,6 +259,7 @@ def handle_client(conn, addr, client_id):
         print(f"❌ Socket error in client #{client_id} handler: {ex}")
     finally:
         try:
+            ui.close()
             conn.close()
         except:
             pass
@@ -500,9 +493,7 @@ def run_ui():
 # Main entry
 # -----------------------
 if __name__ == "__main__":
-    # start config server
     threading.Thread(target=config_server, daemon=True).start()
-    # start controller server (multi-client)
     threading.Thread(target=controller_server, daemon=True).start()
 
     # Run UI in main thread if desired
