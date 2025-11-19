@@ -218,7 +218,7 @@ def main():
                     #QUICK DUMB RE BINDING
                     #TODO: better re-binding
                     print(f"buttons:{len(buttons)}")
-                    if len(buttons) >= 10:
+                    if len(buttons) <= 10:
                         buttons[2],buttons[3] = buttons[3],buttons[2]
 
                         buttons[8],buttons[6] = buttons[6],buttons[8]
