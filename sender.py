@@ -217,15 +217,16 @@ def main():
                 else:
                     #QUICK DUMB RE BINDING
                     #TODO: better re-binding
-                    if len(buttons) >= 11:
+                    print(f"buttons:{len(buttons)}")
+                    if len(buttons) >= 10:
                         buttons[2],buttons[3] = buttons[3],buttons[2]
-    
+
                         buttons[8],buttons[6] = buttons[6],buttons[8]
                         buttons[9],buttons[7] = buttons[7],buttons[9]
-    
+
                         buttons[12],buttons[9] = buttons[9],buttons[12]
                         buttons[11],buttons[8] = buttons[8],buttons[11]
-    
+
                         axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
                    # axes[3],axes[4]= axes[4], axes[3] 
                     
