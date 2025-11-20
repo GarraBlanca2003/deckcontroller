@@ -232,10 +232,7 @@ def main():
                         buttons[9],buttons[8],buttons[7] = buttons[10],buttons[9],buttons[8]
                         
                         #print(f"buttons:{len(buttons)}")
-                   #    axes[3],axes[4]= axes[4], axes[3] 
-                    
 
-                    #print(f"'axes': {axes},'buttons': {buttons},'hat': {hat}")
                     
                     send(sock, {
                         'type': 'full_state',
