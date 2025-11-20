@@ -1,1 +1,1 @@
-C:\garra.dev\deckcontroller\.venv\Scripts\python.exe C:\garra.dev\deckcontroller/windows-send.py 
+C:\garra.dev\deckcontroller\.venv\Scripts\python.exe C:\garra.dev\deckcontroller\windows-send.py 
