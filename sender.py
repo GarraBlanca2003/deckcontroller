@@ -229,7 +229,7 @@ def main():
                         axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
                     if len(buttons) == 11:# steamdeck detected
                         axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
-                        buttons[9],buttons[8],buttons[7] = buttons[10],buttons[9],buttons[8]
+                        buttons[9],buttons[8],buttons[7],buttons[10] = buttons[10],buttons[9],buttons[8],buttons[7]
                         
                         #print(f"buttons:{len(buttons)}")
 
