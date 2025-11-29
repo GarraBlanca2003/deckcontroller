@@ -24,6 +24,7 @@ screen = pygame.display.set_mode((1280, 800))
 font = pygame.font.SysFont("monospace", 20)
 clock = pygame.time.Clock()
 
+
 def fetch_config_from_receiver():
     global SEND_FULL_STATE
     try:
@@ -37,6 +38,7 @@ def fetch_config_from_receiver():
             print(f"📡 Got config: FullState={SEND_FULL_STATE}")
     except Exception as e:
         print("❌ Could not get config from receiver:", e)
+
 
 def get_local_networks():
     networks = []
@@ -58,6 +60,7 @@ def get_local_networks():
         ]
     return networks
 
+
 def check_server_at_ip(ip):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,6 +70,7 @@ def check_server_at_ip(ip):
         return str(ip) if result == 0 else None
     except:
         return None
+
 
 def scan_network_range(network, progress_callback=None):
     print(f"🔍 Scanning {network}...")
@@ -85,9 +89,11 @@ def scan_network_range(network, progress_callback=None):
                 return result
     return None
 
+
 def scan_for_server():
     draw_status("Scanning LAN...")
     networks = get_local_networks()
+
     for network in networks:
         def progress_callback(completed, total, current_ip):
             percentage = (completed / total) * 100
@@ -98,10 +104,13 @@ def scan_for_server():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
+
         server_ip = scan_network_range(network, progress_callback)
         if server_ip:
             return server_ip
+
     return None
+
 
 def ask_for_ip():
     root = tk.Tk()
@@ -115,6 +124,7 @@ def ask_for_ip():
     choice = choice.strip().lower()
     return 'auto' if choice == 'scan' else choice
 
+
 def connect():
     while True:
         try:
@@ -125,6 +135,7 @@ def connect():
             pygame.display.set_caption("Input Sender - Disconnected")
             draw_status("Connection error ")
             time.sleep(RETRY_DELAY)
+
 
 def send(sock, payload):
     message = json.dumps(payload)
@@ -139,19 +150,22 @@ def send(sock, payload):
             if '\n' in buffer:
                 line, _ = buffer.split('\n', 1)
                 return json.loads(line)
-                
+
     except socket.error:
         raise ConnectionError("Lost connection")
 
-def debug_log(sock,text):
+
+def debug_log(sock, text):
     if DEBUG:
-        send(sock, {'type': 'debug', 'data': f'{text}' })
+        send(sock, {'type': 'debug', 'data': f'{text}'})
+
 
 def draw_status(message):
     screen.fill((20, 20, 20))
     label = font.render(message, True, (200, 200, 200))
     screen.blit(label, (20, 35))
     pygame.display.flip()
+
 
 def main():
     global SERVER_IP
@@ -184,6 +198,7 @@ def main():
     while True:
         try:
             pygame.event.pump()
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -195,16 +210,11 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # ==================================================
-            #       DETERMINISTIC EVENT ORDERING
-            # ==================================================
-            pending_events = []
-
             if SEND_FULL_STATE:
                 axes = [round(joystick.get_axis(i), 2) for i in range(joystick.get_numaxes())]
                 buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
                 hat = list(joystick.get_hat(0))
-                
+
                 send(sock, {
                     'type': 'full_state',
                     'data': {
@@ -215,30 +225,32 @@ def main():
                 })
 
             else:
-                # ---- AXES ----
+                pending_events = []
+
+                # AXES
                 for i in range(joystick.get_numaxes()):
                     val = round(joystick.get_axis(i), 2)
                     if abs(val - axes_state[i]) >= 0.01:
                         axes_state[i] = val
                         pending_events.append(("AXIS", i, val))
 
-                # ---- BUTTONS ----
+                # BUTTONS
                 for i in range(joystick.get_numbuttons()):
                     pressed = joystick.get_button(i)
                     if pressed != buttons_state[i]:
                         buttons_state[i] = pressed
                         pending_events.append(("BTN", i, pressed))
 
-                # ---- HAT ----
+                # HAT
                 new_hat = joystick.get_hat(0)
                 if new_hat != hat_state:
                     hat_state = new_hat
                     pending_events.append(("HAT", 0, list(hat_state)))
 
-                # ---- SORT ALL EVENTS ----
+                # 🔥 SORT EVENTS FOR DETERMINISTIC ORDER
                 pending_events.sort(key=lambda e: (e[0], e[1]))
 
-                # ---- SEND IN ORDER ----
+                # SEND SORTED EVENTS
                 for event_type, index, value in pending_events:
                     send(sock, {
                         'type': 'gamepad',
@@ -257,6 +269,7 @@ def main():
             time.sleep(0.5)
             sock.close()
             sock = connect()
+
 
 if __name__ == "__main__":
     main()
