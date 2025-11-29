@@ -15,7 +15,6 @@ CONFIG_PORT = 5001
 RETRY_DELAY = 3
 SCAN_TIMEOUT = 1
 
-USE_RUMBLE = False
 SEND_FULL_STATE = False
 DEBUG = True
 
@@ -26,16 +25,16 @@ font = pygame.font.SysFont("monospace", 20)
 clock = pygame.time.Clock()
 
 def fetch_config_from_receiver():
-    global USE_RUMBLE, SEND_FULL_STATE
+    global SEND_FULL_STATE
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_IP, CONFIG_PORT))
             data = s.recv(1024)
             config = json.loads(data.decode())
-            USE_RUMBLE = config.get("RUMBLE", False)
+
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", False)
             DEBUG = config.get("DEBUG", False)
-            print(f"📡 Got config: rumble={USE_RUMBLE}, FullState={SEND_FULL_STATE}")
+            print(f"📡 Got config: FullState={SEND_FULL_STATE}")
     except Exception as e:
         print("❌ Could not get config from receiver:", e)
 
@@ -143,20 +142,17 @@ def send(sock, payload):
                 
     except socket.error:
         raise ConnectionError("Lost connection")
+
 def debug_log(sock,text):
     if DEBUG:
         send(sock, {'type': 'debug', 'data': f'{text}' })
+
 def draw_status(message):
     screen.fill((20, 20, 20))
     label = font.render(message, True, (200, 200, 200))
     screen.blit(label, (20, 35))
     pygame.display.flip()
 
-def rumble(sock,rumble_power):
-    debug_log(sock, f"rumble : {rumble_power}")
-    if USE_RUMBLE:
-        pass
-        #pygame.joystick.Joystick.rumble(1,1,100)
 def main():
     global SERVER_IP
 
@@ -199,82 +195,60 @@ def main():
                 time.sleep(0.1)
                 continue
 
+            # ==================================================
+            #       DETERMINISTIC EVENT ORDERING
+            # ==================================================
+            pending_events = []
+
             if SEND_FULL_STATE:
                 axes = [round(joystick.get_axis(i), 2) for i in range(joystick.get_numaxes())]
                 buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
                 hat = list(joystick.get_hat(0))
-                if USE_RUMBLE:
-                    response = send(sock, {
-                        'type': 'full_state',
-                        'data': {
-                            'axes': axes,
-                            'buttons': buttons,
-                            'hat': hat
-                        }
-                    })
-                    pass
-                    #rumble(sock,response["RUMBLE"])
-                else:
-                    #QUICK DUMB RE BINDING
-                    #TODO: better re-binding
-                    if len(buttons) == 12:
-                        buttons[2],buttons[3] = buttons[3],buttons[2]
+                
+                send(sock, {
+                    'type': 'full_state',
+                    'data': {
+                        'axes': axes,
+                        'buttons': buttons,
+                        'hat': hat
+                    }
+                })
 
-                        buttons[8],buttons[6] = buttons[6],buttons[8]
-                        buttons[9],buttons[7] = buttons[7],buttons[9]
-
-                        buttons[12],buttons[9] = buttons[9],buttons[12]
-                        buttons[11],buttons[8] = buttons[8],buttons[11]
-
-                        axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
-                    if len(buttons) == 11:# steamdeck detected
-                        axes[2],axes[3],axes[4]= axes[3],axes[4], axes[2] 
-                        buttons[9],buttons[8],buttons[7],buttons[10] = buttons[10],buttons[9],buttons[8],buttons[7]
-                        
-                        #print(f"buttons:{len(buttons)}")
-
-                    
-                    send(sock, {
-                        'type': 'full_state',
-                        'data': {
-                            'axes': axes,
-                            'buttons': buttons,
-                            'hat': hat
-                        }
-                    })
             else:
+                # ---- AXES ----
                 for i in range(joystick.get_numaxes()):
                     val = round(joystick.get_axis(i), 2)
                     if abs(val - axes_state[i]) >= 0.01:
                         axes_state[i] = val
-                        send(sock, {
-                            'type': 'gamepad',
-                            'data': { 'code': f"AXIS_{i}", 'state': val }
-                        })
+                        pending_events.append(("AXIS", i, val))
 
+                # ---- BUTTONS ----
                 for i in range(joystick.get_numbuttons()):
                     pressed = joystick.get_button(i)
                     if pressed != buttons_state[i]:
                         buttons_state[i] = pressed
-                        send(sock, {
-                            'type': 'gamepad',
-                            'data': { 'code': f"BTN_{i}", 'state': pressed }
-                        })
+                        pending_events.append(("BTN", i, pressed))
 
+                # ---- HAT ----
                 new_hat = joystick.get_hat(0)
                 if new_hat != hat_state:
                     hat_state = new_hat
+                    pending_events.append(("HAT", 0, list(hat_state)))
+
+                # ---- SORT ALL EVENTS ----
+                pending_events.sort(key=lambda e: (e[0], e[1]))
+
+                # ---- SEND IN ORDER ----
+                for event_type, index, value in pending_events:
                     send(sock, {
                         'type': 'gamepad',
-                        'data': { 'code': "HAT_0", 'state': list(hat_state) }
+                        'data': {
+                            'code': f"{event_type}_{index}",
+                            'state': value
+                        }
                     })
-                
-            if USE_RUMBLE:
-                pass
-                #draw_status(f"RUMBLE: {response["RUMBLE"]}")
-            else:
-                draw_status("")
 
+            draw_status("")
             clock.tick(60)
 
         except (ConnectionError, BrokenPipeError):
