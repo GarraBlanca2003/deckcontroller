@@ -247,10 +247,9 @@ def main():
                     hat_state = new_hat
                     pending_events.append(("HAT", 0, list(hat_state)))
 
-                # 🔥 SORT EVENTS FOR DETERMINISTIC ORDER
                 pending_events.sort(key=lambda e: (e[0], e[1]))
 
-                # SEND SORTED EVENTS
+                # SEND
                 for event_type, index, value in pending_events:
                     send(sock, {
                         'type': 'gamepad',
