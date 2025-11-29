@@ -45,8 +45,9 @@ capabilities = {
         e.ABS_Y: (-32768, 32767, 0, 0),
         e.ABS_RX: (-32768, 32767, 0, 0),
         e.ABS_RY: (-32768, 32767, 0, 0),
-        e.ABS_Z: (0, 255, 0, 0), 
-        e.ABS_RZ: (0, 255, 0, 0),
+        # Changed triggers to 16-bit signed range to avoid mixed-scaling artifacts
+        e.ABS_Z: (-32768, 32767, 0, 0),     # LT
+        e.ABS_RZ: (-32768, 32767, 0, 0),    # RT
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
     },
@@ -62,14 +63,13 @@ button_map = {
     'HAT_0_LEFT': e.BTN_DPAD_LEFT, 'HAT_0_RIGHT': e.BTN_DPAD_RIGHT
 }
 
-# axis_map maps incoming AXIS_n -> evdev ABS_* constant
 axis_map = {
     'AXIS_0': e.ABS_X,   # Left stick X
     'AXIS_1': e.ABS_Y,   # Left stick Y
     'AXIS_3': e.ABS_RX,  # Right stick X
     'AXIS_4': e.ABS_RY,  # Right stick Y
-    'AXIS_2': e.ABS_Z,   # Left trigger (LT) - trigger axis
-    'AXIS_5': e.ABS_RZ,  # Right trigger (RT) - trigger axis
+    'AXIS_2': e.ABS_Z,   # Left trigger (LT)
+    'AXIS_5': e.ABS_RZ,  # Right trigger (RT)
     'HAT_0': (e.ABS_HAT0X, e.ABS_HAT0Y)
 }
 
@@ -87,21 +87,19 @@ def make_empty_state():
 # -----------------------
 # Global server state
 # -----------------------
-clients = {}                # client_id -> (conn, addr)
-client_states = {}          # client_id -> state dict
+clients = {}
+client_states = {}
 clients_lock = threading.Lock()
 next_client_id = 1
 
 root = None
 notebook = None
-client_tabs = {}            # client_id -> (frame, widgets dict)
+client_tabs = {}
 status_label_var = None
 
-# Event handling
 current_dpad_buttons = set()
 
 def handle_event(ui,client_id,code, value, target_state=None):
-    """Apply event to virtual device and optionally to a per-client state dict (target_state)."""
     global current_dpad_buttons
 
     if target_state is None:
@@ -116,41 +114,37 @@ def handle_event(ui,client_id,code, value, target_state=None):
                 ui.syn()
             except Exception:
                 if DEBUG: print("❌ evdev write error for button:", traceback.format_exc())
-        # update per-client UI state
         if target_state is not None:
             if value:
                 target_state['buttons'].add(code)
             else:
                 target_state['buttons'].discard(code)
 
-    # AXES (single numeric or already scaled)
+    # AXES
     elif isinstance(code, str) and code.startswith("AXIS_"):
         ev = axis_map.get(code)
         if isinstance(ev, int):
-            # TRIGGERS: ABS_Z / ABS_RZ are configured to 0..255 in capabilities.
+            # If this is a trigger (ABS_Z or ABS_RZ) we map from -1..1 -> -32767..32767
             if ev in (e.ABS_Z, e.ABS_RZ):
-                # Sender uses -1.0..+1.0 for triggers (you answered "A").
-                # Convert from -1..1 -> 0..255, and store LT/RT as 0..1 floats.
                 try:
-                    if isinstance(value, float) or isinstance(value, int):
-                        # clamp value just in case
+                    if isinstance(value, (int, float)):
                         v = float(value)
+                        # clamp
                         if v < -1.0: v = -1.0
                         if v > 1.0: v = 1.0
-                        scaled = int(round(((v + 1.0) / 2.0) * 255.0))
+                        # map -1..1 -> -32767..32767 (signed 16-bit)
+                        scaled = int(round(v * 32767.0))
                     else:
-                        # if it's already an int, try to coerce safely
                         scaled = int(value)
-                    ui.write(e.EV_ABS, ev, max(0, min(255, scaled)))
+                    ui.write(e.EV_ABS, ev, scaled)
                     ui.syn()
                 except Exception:
                     if DEBUG: print("❌ evdev write error for trigger axis:", traceback.format_exc())
-
             else:
-                # Non-trigger axis (sticks): expect -1..1 floats -> scale to -32767..32767
+                # Non-trigger axis (sticks): -1..1 -> -32767..32767
                 try:
-                    if isinstance(value, float) and abs(value) <= 1:
-                        val = int(value * 32767)
+                    if isinstance(value, (int, float)) and abs(float(value)) <= 1:
+                        val = int(round(float(value) * 32767.0))
                     else:
                         val = int(value)
                     ui.write(e.EV_ABS, ev, val)
@@ -158,40 +152,32 @@ def handle_event(ui,client_id,code, value, target_state=None):
                 except Exception:
                     if DEBUG: print("❌ evdev write error for axis:", traceback.format_exc())
 
-        # update per-client UI state (map axis indices to logical stick/trigger names)
+        # update per-client UI state mapping
         if target_state is not None:
-            # Map according to axis_map meaning (based on how axis_map was defined above)
             if code == "AXIS_0":
-                # Left stick X
                 target_state['axes']['LS_x'] = float(value) if isinstance(value, (int, float)) else value
             elif code == "AXIS_1":
-                # Left stick Y
                 target_state['axes']['LS_y'] = float(value) if isinstance(value, (int, float)) else value
             elif code == "AXIS_3":
-                # Right stick X
                 target_state['axes']['RS_x'] = float(value) if isinstance(value, (int, float)) else value
             elif code == "AXIS_4":
-                # Right stick Y
                 target_state['axes']['RS_y'] = float(value) if isinstance(value, (int, float)) else value
             elif code == "AXIS_2":
-                # Left trigger: convert -1..1 -> 0..1 for UI representation
                 try:
                     v = float(value)
                     target_state['axes']['LT'] = (v + 1.0) / 2.0
-                except Exception:
+                except:
                     pass
             elif code == "AXIS_5":
-                # Right trigger: convert -1..1 -> 0..1 for UI representation
                 try:
                     v = float(value)
                     target_state['axes']['RT'] = (v + 1.0) / 2.0
-                except Exception:
+                except:
                     pass
 
-    # HAT (x,y)
+    # HAT
     elif code == "HAT_0":
         x, y = value
-        # clear previous
         for btn in list(current_dpad_buttons):
             try:
                 ui.write(e.EV_KEY, btn, 0)
@@ -220,7 +206,6 @@ def handle_event(ui,client_id,code, value, target_state=None):
             target_state['dpad'] = (x, y)
 
 def apply_full_state(ui,client_id,data, target_state=None):
-    # data expected: {'axes': [...], 'buttons': [...], 'hat': [x,y]}
     for i, val in enumerate(data.get('axes', [])):
         handle_event(ui, client_id, f"AXIS_{i}", val, target_state=target_state)
     for i, val in enumerate(data.get('buttons', [])):
@@ -270,13 +255,9 @@ def handle_client(conn, addr, client_id):
                 except Exception:
                     print(f"❌ Error processing event from client #{client_id}:\n{traceback.format_exc()}")
 
-                # prepare and send response
                 with clients_lock:
                     client_count = len(clients)
-                response = {
-                    "CLIENT_ID": client_id,
-                    "CLIENT_COUNT": client_count
-                }
+                response = {"CLIENT_ID": client_id, "CLIENT_COUNT": client_count}
                 try:
                     conn.sendall((json.dumps(response) + "\n").encode())
                 except Exception as ex:
@@ -315,7 +296,6 @@ def controller_server():
                 clients[client_id] = (conn, addr)
                 client_states[client_id] = make_empty_state()
             print(f"✅ New connection from {addr} assigned Client ID #{client_id}. Total clients: {len(clients)}")
-            # create UI tab
             create_client_tab(client_id, addr)
             update_status_label()
             t = threading.Thread(target=handle_client, args=(conn, addr, client_id), daemon=True)
@@ -343,38 +323,27 @@ def config_server():
                 except Exception as e:
                     print("❌ Error sending config:", e)
 
-# tabs per client
+# UI helpers (unchanged)...
 def create_client_tab(client_id, addr):
-    """Create a new tab for client_id in the notebook (called from server thread)."""
     if not SHOW_UI:
         return
     def _create():
         global notebook, client_tabs
         tab = ttk.Frame(notebook)
         notebook.add(tab, text=f"Client #{client_id}")
-        # top label with address
         lbl = tk.Label(tab, text=f"ID: {client_id} — {addr[0]}:{addr[1]}", bg="black", fg="white")
         lbl.pack(anchor="w", pady=(4,0))
-        # small status label to show button list
         btn_frame = tk.Frame(tab, bg="black")
         btn_frame.pack(side="left", padx=8, pady=8, anchor="n")
-        # Canvas to draw buttons/axes/dpad for this client
         canvas = tk.Canvas(tab, width=420, height=300, bg="black")
         canvas.pack(side="left", padx=6, pady=6)
-
-        client_tabs[client_id] = {
-            'frame': tab,
-            'label': lbl,
-            'canvas': canvas,
-        }
+        client_tabs[client_id] = {'frame': tab, 'label': lbl, 'canvas': canvas}
     try:
         root.after(0, _create)
     except Exception:
-        # if root isn't available, ignore (headless)
         pass
 
 def remove_client_tab(client_id):
-    """Remove tab for client_id from notebook (called by network threads)."""
     if not SHOW_UI:
         return
     def _remove():
@@ -420,8 +389,6 @@ def draw_client_canvas(client_id):
     if st is None:
         canvas.create_text(200, 140, text="No state yet", fill="white")
         return
-
-    # Header
     canvas.create_text(210, 18, text=f"Client #{client_id}", fill="white")
 
     def dpad_active(name):
@@ -432,7 +399,6 @@ def draw_client_canvas(client_id):
             (name == "HAT_0_LEFT" and x == -1) or
             (name == "HAT_0_RIGHT" and x == 1)
         )
-
     def draw_btn(name, x, y):
         color = "lime" if (name in st['buttons'] or dpad_active(name)) else "gray"
         canvas.create_oval(x-10, y-10, x+10, y+10, fill=color)
@@ -484,7 +450,6 @@ def draw_client_canvas(client_id):
         canvas.create_oval(295, 195, 305, 205, fill="blue")
 
 def ui_refresh_loop():
-    """Called periodically in the UI thread to redraw all client canvases."""
     if not SHOW_UI:
         return
     for cid in list(client_tabs.keys()):
@@ -492,17 +457,12 @@ def ui_refresh_loop():
     root.after(50, ui_refresh_loop)
 
 def run_ui():
-    """Starts Tkinter UI: Notebook tabs for each client and status label."""
     global root, notebook, status_label_var
     root = tk.Tk()
     root.configure(bg="black")
     root.title("Controller UI — 0 clients")
-
-    # Notebook (tabs)
     notebook = ttk.Notebook(root)
     notebook.pack(fill="both", expand=True, padx=6, pady=6)
-
-    # status label
     status_label_var = tk.StringVar(value="Connected clients: 0")
     status_label = tk.Label(root, textvariable=status_label_var, bg="black", fg="white")
     status_label.pack(anchor="w", padx=6, pady=(0,6))
@@ -514,7 +474,6 @@ def run_ui():
 if __name__ == "__main__":
     threading.Thread(target=config_server, daemon=True).start()
     threading.Thread(target=controller_server, daemon=True).start()
-
     if SHOW_UI:
         run_ui()
     else:
