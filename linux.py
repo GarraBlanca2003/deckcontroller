@@ -16,8 +16,8 @@ CONFIG_PORT = 5001
 CONFIG_PATH = "config.json"
 USE_RUMBLE = False
 SEND_FULL_STATE = False
-DEBUG = True
-
+DEBUG = False
+PC_IP = "192.168.1.10"
 if os.path.exists(CONFIG_PATH):
     try:
         with open(CONFIG_PATH, "r") as f:
@@ -284,7 +284,7 @@ def controller_server():
     global next_client_id, clients
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("192.168.1.10", SERVER_PORT))
+    sock.bind((PC_IP, SERVER_PORT))
     sock.listen(10)
     print(f"🎮 Controller server listening on port {SERVER_PORT}")
     while True:
@@ -306,7 +306,7 @@ def controller_server():
 def config_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(("0.0.0.0", CONFIG_PORT))
+        s.bind((PC_IP, CONFIG_PORT))
         s.listen(5)
         print("📡 Config server running on port", CONFIG_PORT)
         while True:
