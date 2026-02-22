@@ -50,6 +50,10 @@ capabilities = {
         e.ABS_RZ: (-32768, 32767, 0, 0),    # RT
         e.ABS_HAT0X: (-1, 1, 0, 0),
         e.ABS_HAT0Y: (-1, 1, 0, 0),
+        # Gyro/motion axes (for rotational data)
+        e.ABS_WHEEL: (-32768, 32767, 0, 0),   # Rotation Z (yaw)
+        e.ABS_TILT_X: (-32768, 32767, 0, 0),  # Rotation X (roll)
+        e.ABS_TILT_Y: (-32768, 32767, 0, 0),  # Rotation Y (pitch)
     },
     e.EV_FF: { e.FF_RUMBLE }
 }
@@ -70,7 +74,10 @@ axis_map = {
     'AXIS_4': e.ABS_RY,  # Right stick Y
     'AXIS_2': e.ABS_Z,   # Left trigger (LT)
     'AXIS_5': e.ABS_RZ,  # Right trigger (RT)
-    'HAT_0': (e.ABS_HAT0X, e.ABS_HAT0Y)
+    'HAT_0': (e.ABS_HAT0X, e.ABS_HAT0Y),
+    'GYRO_X': e.ABS_TILT_X,  # Gyro roll
+    'GYRO_Y': e.ABS_TILT_Y,  # Gyro pitch
+    'GYRO_Z': e.ABS_WHEEL,   # Gyro yaw
 }
 
 def make_empty_state():
@@ -79,7 +86,8 @@ def make_empty_state():
         'axes': {
             'LS_x': 0.0, 'LS_y': 0.0,
             'RS_x': 0.0, 'RS_y': 0.0,
-            'LT': 0.0, 'RT': 0.0
+            'LT': 0.0, 'RT': 0.0,
+            'GYRO_X': 0.0, 'GYRO_Y': 0.0, 'GYRO_Z': 0.0
         },
         'dpad': (0, 0)
     }
@@ -112,8 +120,8 @@ def handle_event(ui,client_id,code, value, target_state=None):
             try:
                 ui.write(e.EV_KEY, ev, int(bool(value)))
                 ui.syn()
-            except Exception:
-                if DEBUG: print("❌ evdev write error for button:", traceback.format_exc())
+            except Exception as ex:
+                if DEBUG: print(f"❌ evdev write error for button {code}:", ex)
         if target_state is not None:
             if value:
                 target_state['buttons'].add(code)
@@ -138,8 +146,8 @@ def handle_event(ui,client_id,code, value, target_state=None):
                         scaled = int(value)
                     ui.write(e.EV_ABS, ev, scaled)
                     ui.syn()
-                except Exception:
-                    if DEBUG: print("❌ evdev write error for trigger axis:", traceback.format_exc())
+                except Exception as ex:
+                    if DEBUG: print(f"❌ evdev write error for trigger axis {code}:", ex)
             else:
                 # Non-trigger axis (sticks): -1..1 -> -32767..32767
                 try:
@@ -149,19 +157,19 @@ def handle_event(ui,client_id,code, value, target_state=None):
                         val = int(value)
                     ui.write(e.EV_ABS, ev, val)
                     ui.syn()
-                except Exception:
-                    if DEBUG: print("❌ evdev write error for axis:", traceback.format_exc())
+                except Exception as ex:
+                    if DEBUG: print(f"❌ evdev write error for axis {code}:", ex)
 
         # update per-client UI state mapping
         if target_state is not None:
             if code == "AXIS_0":
-                target_state['axes']['LS_x'] = float(value) if isinstance(value, (int, float)) else value
+                target_state['axes']['LS_x'] = float(value) if isinstance(value, (int, float)) else 0.0
             elif code == "AXIS_1":
-                target_state['axes']['LS_y'] = float(value) if isinstance(value, (int, float)) else value
+                target_state['axes']['LS_y'] = float(value) if isinstance(value, (int, float)) else 0.0
             elif code == "AXIS_3":
-                target_state['axes']['RS_x'] = float(value) if isinstance(value, (int, float)) else value
+                target_state['axes']['RS_x'] = float(value) if isinstance(value, (int, float)) else 0.0
             elif code == "AXIS_4":
-                target_state['axes']['RS_y'] = float(value) if isinstance(value, (int, float)) else value
+                target_state['axes']['RS_y'] = float(value) if isinstance(value, (int, float)) else 0.0
             elif code == "AXIS_2":
                 try:
                     v = float(value)
@@ -174,6 +182,32 @@ def handle_event(ui,client_id,code, value, target_state=None):
                     target_state['axes']['RT'] = (v + 1.0) / 2.0
                 except:
                     pass
+
+    # GYRO/MOTION AXES
+    elif isinstance(code, str) and code.startswith("GYRO_"):
+        ev = axis_map.get(code)
+        if isinstance(ev, int):
+            try:
+                if isinstance(value, (int, float)):
+                    v = float(value)
+                    # Clamp and scale gyro data: -1..1 -> -32767..32767
+                    if v < -1.0: v = -1.0
+                    if v > 1.0: v = 1.0
+                    scaled = int(round(v * 32767.0))
+                else:
+                    scaled = int(value)
+                ui.write(e.EV_ABS, ev, scaled)
+                ui.syn()
+            except Exception as ex:
+                if DEBUG: print("❌ evdev write error for gyro:", ex)
+        
+        if target_state is not None:
+            if code == "GYRO_X":
+                target_state['axes']['GYRO_X'] = float(value) if isinstance(value, (int, float)) else 0.0
+            elif code == "GYRO_Y":
+                target_state['axes']['GYRO_Y'] = float(value) if isinstance(value, (int, float)) else 0.0
+            elif code == "GYRO_Z":
+                target_state['axes']['GYRO_Z'] = float(value) if isinstance(value, (int, float)) else 0.0
 
     # HAT
     elif code == "HAT_0":
@@ -199,18 +233,30 @@ def handle_event(ui,client_id,code, value, target_state=None):
             ui.write(e.EV_ABS, e.ABS_HAT0X, x)
             ui.write(e.EV_ABS, e.ABS_HAT0Y, y)
             ui.syn()
-        except Exception:
-            if DEBUG: print("❌ evdev write error for hat:", traceback.format_exc())
+        except Exception as ex:
+            if DEBUG: print(f"❌ evdev write error for hat:", ex)
 
         if target_state is not None:
             target_state['dpad'] = (x, y)
 
 def apply_full_state(ui,client_id,data, target_state=None):
-    for i, val in enumerate(data.get('axes', [])):
-        handle_event(ui, client_id, f"AXIS_{i}", val, target_state=target_state)
-    for i, val in enumerate(data.get('buttons', [])):
-        handle_event(ui, client_id, f"BTN_{i}", val, target_state=target_state)
-    handle_event(ui, client_id, "HAT_0", data.get('hat', (0,0)), target_state=target_state)
+    try:
+        for i, val in enumerate(data.get('axes', [])):
+            handle_event(ui, client_id, f"AXIS_{i}", val, target_state=target_state)
+        for i, val in enumerate(data.get('buttons', [])):
+            handle_event(ui, client_id, f"BTN_{i}", val, target_state=target_state)
+        handle_event(ui, client_id, "HAT_0", data.get('hat', (0,0)), target_state=target_state)
+        
+        # Handle gyro if present
+        gyro_data = data.get('gyro')
+        if gyro_data:
+            handle_event(ui, client_id, "GYRO_X", gyro_data.get('x', 0), target_state=target_state)
+            handle_event(ui, client_id, "GYRO_Y", gyro_data.get('y', 0), target_state=target_state)
+            handle_event(ui, client_id, "GYRO_Z", gyro_data.get('z', 0), target_state=target_state)
+    except Exception as ex:
+        if DEBUG:
+            print(f"❌ Error applying full state: {ex}")
+            traceback.print_exc()
 
 def handle_client(conn, addr, client_id):
     global clients, client_states
@@ -247,13 +293,20 @@ def handle_client(conn, addr, client_id):
                         handle_event(ui,client_id,d.get('code'), d.get('state'), target_state=st)
                     elif etype == 'full_state':
                         apply_full_state(ui,client_id,event.get('data', {}), target_state=st)
+                    elif etype == 'gyro':
+                        d = event.get('data', {})
+                        handle_event(ui, client_id, "GYRO_X", d.get('x', 0), target_state=st)
+                        handle_event(ui, client_id, "GYRO_Y", d.get('y', 0), target_state=st)
+                        handle_event(ui, client_id, "GYRO_Z", d.get('z', 0), target_state=st)
                     elif etype == 'debug':
                         print(f"[DEBUG #{client_id}] {event.get('data')}")
                     else:
                         if DEBUG:
                             print(f"[CLIENT {client_id}] Unknown event type: {etype}")
-                except Exception:
-                    print(f"❌ Error processing event from client #{client_id}:\n{traceback.format_exc()}")
+                except Exception as ex:
+                    print(f"❌ Error processing event from client #{client_id}: {ex}")
+                    if DEBUG:
+                        traceback.print_exc()
 
                 with clients_lock:
                     client_count = len(clients)
