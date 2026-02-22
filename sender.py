@@ -26,7 +26,7 @@ clock = pygame.time.Clock()
 
 
 def fetch_config_from_receiver():
-    global SEND_FULL_STATE, DEBUG
+    global SEND_FULL_STATE
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_IP, CONFIG_PORT))
@@ -35,7 +35,7 @@ def fetch_config_from_receiver():
 
             SEND_FULL_STATE = config.get("SEND_FULL_STATE", False)
             DEBUG = config.get("DEBUG", False)
-            print(f"📡 Got config: FullState={SEND_FULL_STATE}, Gyro support available")
+            print(f"📡 Got config: FullState={SEND_FULL_STATE}")
     except Exception as e:
         print("❌ Could not get config from receiver:", e)
 
@@ -192,16 +192,6 @@ def main():
     axes_state = [0.0] * joystick.get_numaxes()
     buttons_state = [False] * joystick.get_numbuttons()
     hat_state = (0, 0)
-    
-    # Gyro/motion state (roll, pitch, yaw)
-    gyro_state = [0.0, 0.0, 0.0]
-    motion_supported = False
-    if hasattr(joystick, 'get_numhats'):
-        try:
-            # Try to detect gyro support by checking for motion capabilities
-            motion_supported = True
-        except:
-            pass
 
     sock = connect()
 
@@ -214,21 +204,6 @@ def main():
                     pygame.quit()
                     sock.close()
                     sys.exit()
-                
-                # Handle gyro/motion events
-                if event.type == pygame.JOYMOTION:
-                    if event.joy == 0:
-                        try:
-                            send(sock, {
-                                'type': 'gyro',
-                                'data': {
-                                    'x': round(event.x, 2),
-                                    'y': round(event.y, 2),
-                                    'z': round(event.z, 2)
-                                }
-                            })
-                        except (ConnectionError, BrokenPipeError):
-                            pass
 
             if not pygame.display.get_active():
                 draw_status("Paused (unfocused)")
@@ -245,8 +220,7 @@ def main():
                     'data': {
                         'axes': axes,
                         'buttons': buttons,
-                        'hat': hat,
-                        'gyro': gyro_state if motion_supported else None
+                        'hat': hat
                     }
                 })
 
